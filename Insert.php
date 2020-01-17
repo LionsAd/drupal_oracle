@@ -66,7 +66,7 @@ class Insert extends QueryInsert {
           foreach ($this->insertFields as $idx => $field) {
             $insert_values[$idx] = $this->connection->cleanupArgValue($insert_values[$idx]);
 
-            if (isset($table_information->blob_fields[$field])) {
+            if (isset($table_information->blob_fields[strtoupper($field)])) {
               $blobs[$blob_count] = fopen('php://memory', 'a');
               fwrite($blobs[$blob_count], $insert_values[$idx]);
               rewind($blobs[$blob_count]);
@@ -79,7 +79,7 @@ class Insert extends QueryInsert {
               $stmt->bindParam(':db_insert_placeholder_' . $max_placeholder++, $insert_values[$idx]);
             }
           }
-          $last_insert_id = $this->connection->query($stmt, $insert_values, $this->queryOptions);
+          $last_insert_id = $this->connection->query($stmt, [], $this->queryOptions);
         }
       }
     }
