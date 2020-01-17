@@ -35,9 +35,13 @@ class Schema extends DatabaseSchema {
   /**
    * A cache of information about blob columns and sequences of tables.
    *
+   * This is collected by Schema::queryTableInformation(), by introspecting the
+   * database.
+   *
+   * @see \Drupal\Core\Database\Driver\oracle\Schema::queryTableInformation()
    * @var array
    */
-  protected $driverTableInformation = [];
+  protected $tableInformation = [];
 
   /**
    * @todo description
@@ -77,38 +81,57 @@ class Schema extends DatabaseSchema {
   }
 
   /**
-   * Oracle schema helper.
+   * Fetch the list of blobs and sequences used on a table.
+   *
+   * We introspect the database to collect the information required by insert
+   * and update queries.
+   *
+   * @param $table_name
+   *   The non-prefixed name of the table.
+   * @return
+   *   An object with two member variables:
+   *     - 'blob_fields' that lists all the blob fields in the table.
+   *     - 'sequences' that lists the sequences used in that table.
    */
-  public function getTableInfo($table) {
-    $table_prefixed = $this->connection->prefixTables('{' . $table . '}');
-    $schema = $this->tableSchema($table_prefixed);
+  public function queryTableInformation($table) {
+    $key = $this->getTableInformationKey($table);
 
-    if (!isset($this->driverTableInformation[$table_prefixed])) {
-      $this->driverTableInformation[$table_prefixed] = (object) [];
+    $table_information = (object) [
+      'blob_fields' => [],
+      'sequences' => [],
+    ];
 
-      try {
-        $this->driverTableInformation[$table_prefixed] = $this->connection
-          ->queryOracle('SELECT identifier.sequence_for_table(?,?) sequence_name FROM dual', [$table, $schema])
-          ->fetchObject();
-      }
-      catch (\PDOException $exception) {
-        if ($exception->errorInfo[1] != '00904') {
-          // Ignore (may be a connection to a non drupal schema not having the
-          // identifier pkg). See http://drupal.org/node/1121044.
-          throw $exception;
-        }
-      }
-    }
+    $this->tableInformation[$key] = $table_information;
 
-    return $this->driverTableInformation[$table_prefixed];
+    return $this->tableInformation[$key];
   }
 
   /**
-   * Oracle schema helper.
+   * Resets information about table blobs, sequences and serial fields.
+   *
+   * @param $table
+   *   The non-prefixed name of the table.
    */
-  public function removeTableInfoCache($table) {
-    $table_prefixed = $this->connection->prefixTables('{' . $table . '}');
-    unset($this->driverTableInformation[$table_prefixed]);
+  protected function resetTableInformation($table) {
+    $key = $this->getTableInformationKey($table);
+    unset($this->tableInformation[$key]);
+  }
+
+  /**
+   * Returns the key for the tableInformation array for a given table.
+   *
+   * @param $table
+   *   The non-prefixed name of the table.
+   */
+  protected function getTableInformationKey($table) {
+    $key = $this->connection->prefixTables('{' . $table . '}');
+    if (strpos($key, '.') === FALSE) {
+      // @TODO Find current owner
+      $key = 'public.' . $key;
+    }
+    $key = strtoupper(str_replace('"', '', $key));
+
+    return $key;
   }
 
   /**
@@ -430,16 +453,7 @@ class Schema extends DatabaseSchema {
    * {@inheritdoc}
    */
   public function dropTable($table) {
-
-//    // Workaround to fix deleting of simpletest data.
-//    if (preg_match('/^test\d+.*/', $table) === 1) {
-//
-//      // Always convert to uppercase, because of conversion to lowercase in
-//      // findTables() method.
-//      return $this->connection->query('DROP USER '. strtoupper($table) .' CASCADE');
-//    }
-
-    $info = $this->getTableInfo($table);
+    $info = $this->queryTableInformation($table);
 
     if ($info->sequence_name) {
       $this->connection->query('DROP SEQUENCE ' . $info->sequence_name);
@@ -450,7 +464,7 @@ class Schema extends DatabaseSchema {
     }
 
     $this->connection->query('DROP TABLE ' . $this->oid($table, TRUE) . ' CASCADE CONSTRAINTS PURGE');
-    $this->removeTableInfoCache($table);
+    $this->resetTableInformation($table);
   }
 
   /**
@@ -1267,7 +1281,7 @@ class Schema extends DatabaseSchema {
     }
 
     $this->resetLongIdentifiers();
-    $this->removeTableInfoCache($cache_table);
+    $this->resetTableInformation($cache_table);
     $this->rebuildDefaultsTrigger($trigger_table);
   }
 
