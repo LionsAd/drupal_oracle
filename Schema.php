@@ -312,6 +312,8 @@ class Schema extends DatabaseSchema {
     $table_information = $this->queryTableInformation($name);
 
     $sequences = [];
+    $table_information->blob_fields = [];
+    $table_information->sequences = [];
 
     foreach ($table['fields'] as $field_name => $field) {
       if (!isset($field['type'])) {
@@ -326,9 +328,6 @@ class Schema extends DatabaseSchema {
 
       if ($field['oracle_type'] == 'BLOB') {
         $table_information->blob_fields[strtoupper($field_name)] = $field_name;
-      }
-      elseif ($field['oracle_type'] == 'CLOB') {
-        $table_information->clob_fields[strtoupper($field_name)] = $field_name;
       }
     }
 
