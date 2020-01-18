@@ -314,6 +314,8 @@ class Schema extends DatabaseSchema {
     $table_information = $this->queryTableInformation($name);
 
     $sequences = [];
+    $table_information->blob_fields = [];
+    $table_information->clob_fields = [];
 
     foreach ($table['fields'] as $field_name => $field) {
       if (!isset($field['type'])) {
