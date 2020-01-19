@@ -91,7 +91,6 @@ class Schema extends DatabaseSchema {
    * @return
    *   An object with two member variables:
    *     - 'blob_fields' that lists all the blob fields in the table.
-   *     - 'clob_fields' that lists all the clob fields in the table.
    *     - 'sequences' that lists the sequences used in that table.
    */
   public function queryTableInformation($table) {
@@ -99,7 +98,6 @@ class Schema extends DatabaseSchema {
 
     $table_information = (object) [
       'blob_fields' => [],
-      'clob_fields' => [],
       'sequences' => [],
     ];
 
@@ -315,7 +313,7 @@ class Schema extends DatabaseSchema {
 
     $sequences = [];
     $table_information->blob_fields = [];
-    $table_information->clob_fields = [];
+    $table_information->sequences = [];
 
     foreach ($table['fields'] as $field_name => $field) {
       if (!isset($field['type'])) {
@@ -330,9 +328,6 @@ class Schema extends DatabaseSchema {
 
       if ($field['oracle_type'] == 'BLOB') {
         $table_information->blob_fields[strtoupper($field_name)] = $field_name;
-      }
-      elseif ($field['oracle_type'] == 'CLOB') {
-        $table_information->clob_fields[strtoupper($field_name)] = $field_name;
       }
     }
 
