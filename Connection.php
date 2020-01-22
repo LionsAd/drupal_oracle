@@ -136,6 +136,7 @@ class Connection extends DatabaseConnection {
     'SESSION',
     'SET',
     'SHARE',
+    'SID',
     'SIZE',
     'SMALLINT',
     'START',
