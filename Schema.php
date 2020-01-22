@@ -164,57 +164,6 @@ EOF;
   }
 
   /**
-   * Emulates mysql default column behaviour.
-   *
-   * Eg. insert into table (col1) values (null).
-   * If col1 has default in mysql you have the default inserted instead of null.
-   * On oracle you have null inserted. So we need a trigger to intercept this
-   * condition and substitute null with default. This happens on MySQL only
-   * inserting not updating.
-   */
-  public function rebuildDefaultsTrigger($table) {
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
-    $oname = $this->oid($table, FALSE, FALSE);
-
-    $trigger = 'create or replace trigger ' . $this->oid('TRG_' . $table . '_DEFS', TRUE) .
-      ' before insert on ' . $this->oid($table, TRUE) .
-      ' for each row begin /* defs trigger */ if inserting then ';
-
-    $serial_oname = $this->connection->queryOracle("select field_name from table(identifier.get_serial(?,?))", array($table, $schema))->fetchColumn();
-    $serial_oname = $serial_oname ? $serial_oname : "^NNC^";
-
-    $stmt = $this->connection->queryOracle(
-      "select /*+ALL_ROWS*/ column_name,
-       data_default
-       from all_tab_columns
-       where column_name != ?
-       and owner= nvl(user,?)
-       and table_name= ?
-       and data_default is not null
-      ",
-      array($serial_oname, $schema, $oname)
-    );
-
-    $def = FALSE;
-
-    while ($row = $stmt->fetchObject()) {
-      $def = TRUE;
-      $trigger .=
-        'if :NEW."' . $row->column_name . '" is null or to_char(:NEW."' . $row->column_name . '") = \'' . ORACLE_EMPTY_STRING_REPLACER . '\'
-          then :NEW."' . $row->column_name . '":= ' . $row->data_default . ';
-          end if;
-        ';
-    }
-
-    if (!$def) {
-      $trigger .= ' null; ';
-    }
-
-    $trigger .= 'end if; end;';
-    $this->connection->query($trigger, [], ['allow_delimiter_in_query' => TRUE]);
-  }
-
-  /**
    * {@inheritdoc}
    */
   public function createTable($name, $table) {
@@ -225,7 +174,6 @@ EOF;
     foreach ($statements as $statement) {
       $this->connection->query($statement, [], ['allow_delimiter_in_query' => TRUE]);
     }
-    $this->rebuildDefaultsTrigger($name);
     $this->resetLongIdentifiers();
     $this->resetTableInformation($name);
   }
@@ -333,7 +281,7 @@ EOF;
     }
     elseif (isset($spec['default'])) {
       $default = is_string($spec['default']) ? $this->connection->quote($this->connection->cleanupArgValue($spec['default'])) : $spec['default'];
-      $sql .= " default {$default}";
+      $sql .= " DEFAULT ON NULL {$default}";
     }
 
     if (!empty($spec['not null'])) {
@@ -694,8 +642,7 @@ EOF;
       $default = is_string($default) ? $this->connection->quote($this->connection->cleanupArgValue($default)) : $default;
     }
 
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT ' . $default . ' )');
-    $this->rebuildDefaultsTrigger($table);
+    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT ON NULL ' . $default . ' )');
   }
 
   /**
@@ -703,7 +650,6 @@ EOF;
    */
   public function fieldSetNoDefault($table, $field) {
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT NULL)');
-    $this->rebuildDefaultsTrigger($table);
   }
 
   /**
@@ -1216,7 +1162,6 @@ EOF;
 
     $this->resetLongIdentifiers();
     $this->resetTableInformation($cache_table);
-    $this->rebuildDefaultsTrigger($trigger_table);
   }
 
 }
