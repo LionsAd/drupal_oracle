@@ -340,8 +340,10 @@ class Connection extends DatabaseConnection {
         }
 
         $stmt = $this->prepareQuery($query);
-        $stmt->execute($this->cleanupArgs($args), $options);
+        $args = $this->cleanupArgs($args);
       }
+
+      $stmt->execute(empty($args) ? NULL : (array) $args, $options);
 
       switch ($options['return']) {
         case Database::RETURN_STATEMENT:
