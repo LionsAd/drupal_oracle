@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\Driver\Database\oracle;
+namespace Drupal\oracle\Driver\Database\oracle;
 
 /**
  * Handle long identifiers for Oracle database.
@@ -31,7 +31,7 @@ class LongIdentifierHandler {
   /**
    * The parent connection.
    *
-   * @var \Drupal\Driver\Database\oracle\Connection
+   * @var \Drupal\oracle\Driver\Database\oracle\Connection
    */
   private $connection;
 
