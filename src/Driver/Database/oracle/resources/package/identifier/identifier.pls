@@ -1,4 +1,5 @@
 create or replace package identifier
+    AUTHID CURRENT_USER
 as
 
   type serial_info is record
