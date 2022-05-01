@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\Driver\Database\oracle;
+namespace Drupal\oracle\Driver\Database\oracle;
 
 use Drupal\Core\Database\Statement as DatabaseStatement;
 
@@ -14,7 +14,7 @@ class Statement extends DatabaseStatement implements \IteratorAggregate {
    *
    * The name $dbh is inherited from \PDOStatement.
    *
-   * @var \Drupal\Driver\Database\oracle\Connection
+   * @var \Drupal\oracle\Driver\Database\oracle\Connection
    */
   public $dbh;
 
