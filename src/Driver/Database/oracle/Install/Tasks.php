@@ -56,7 +56,8 @@ class Tasks extends InstallTasks {
       // This doesn't actually test the connection.
       Database::setActiveConnection();
 
-      $dir = DRUPAL_ROOT . '/drivers/lib/Drupal/Driver/Database/oracle/resources';
+      $dir = __DIR__ . '/../resources';
+
       $this->determineSupportedBindSize();
       $this->createFailsafeObjects("{$dir}/table");
       $this->createFailsafeObjects("{$dir}/index");
