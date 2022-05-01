@@ -1,4 +1,5 @@
 create or replace package identifier
+    AUTHID CURRENT_USER
 as
 
   long_identifier_prefix  constant varchar2(10):= '<?php print ORACLE_LONG_IDENTIFIER_PREFIX; ?>';
