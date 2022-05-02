@@ -112,6 +112,12 @@ class Schema extends DatabaseSchema {
           ->fetchCol();
       $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
           ->fetchCol();
+        foreach ($sequences as $key => $sequence_name) {
+          $full_name =<<<EOF
+"$schema"."$sequence_name"
+EOF;
+          $sequences[$key] = str_replace("\n", "", $full_name);
+        }
       }
       else {
         $blobs = $this->connection->query("SELECT column_name FROM user_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table", [':db_table' => $table_name])
