@@ -725,6 +725,10 @@ class Connection extends DatabaseConnection {
    */
   public function prepareStatement(string $query, array $options, bool $allow_row_count = FALSE): StatementInterface {
     $query = str_replace(ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, 'C##', $query);
+    if (!($options['allow_square_brackets'] ?? FALSE)) {
+      $query = $this->quoteIdentifiers($query);
+    }
+
     $query = $this->escapeEmptyLiterals($query);
     $query = $this->escapeAnsi($query);
     if (!$this->external) {
@@ -734,66 +738,9 @@ class Connection extends DatabaseConnection {
     $query = $this->escapeCompatibility($query);
     $query = $this->prefixTables($query);
     $query = $this->escapeIfFunction($query);
+
+    $options['allow_square_brackets'] = TRUE;
     return parent::prepareStatement($query, $options, $allow_row_count);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function escapeField($field) {
-    $escaped = parent::escapeField($field);
-
-    // Remove any invalid start character.
-    $escaped = preg_replace('/^[^A-Za-z0-9_]/', '', $escaped);
-
-    // The pgsql database driver does not support field names that contain
-    // periods (supported by PostgreSQL server) because this method may be
-    // called by a field with a table alias as part of SQL conditions or
-    // order by statements. This will consider a period as a table alias
-    // identifier, and split the string at the first period.
-    if (preg_match('/^([A-Za-z0-9_]+)"?[.]"?([A-Za-z0-9_.]+)/', $escaped, $parts)) {
-      $table = $parts[1];
-      $column = $parts[2];
-
-      // Use escape alias because escapeField may contain multiple periods that
-      // need to be escaped.
-      $escaped = $this->escapeTable($table) . '.' . $this->escapeAlias($column);
-    }
-    else {
-      $escaped = $this->doEscape($escaped);
-    }
-
-    return $escaped;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function escapeAlias($field) {
-    $escaped = preg_replace('/[^A-Za-z0-9_]+/', '', $field);
-    $escaped = $this->doEscape($escaped);
-    return $escaped;
-  }
-
-  /**
-   * Escape a string if needed.
-   *
-   * @param $string
-   *   The string to escape.
-   * @return string
-   *   The escaped string.
-   */
-  protected function doEscape($string) {
-    // Quote identifier to make it case-sensitive.
-    // @todo Rework?
-    if (preg_match('/[A-Z]/', $string)) {
-      $string = '"' . $string . '"';
-    }
-    elseif (in_array(strtoupper($string), $this->oracleReservedWords)) {
-      // Quote the string for Oracle reserved key words.
-      $string = '"' . strtoupper($string) . '"';
-    }
-    return $string;
   }
 
   /**
