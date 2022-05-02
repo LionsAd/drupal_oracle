@@ -7,6 +7,7 @@ use Drupal\Core\Database\IntegrityConstraintViolationException;
 use Drupal\Core\Database\Database;
 use Drupal\Core\Database\Connection as DatabaseConnection;
 use Drupal\Core\Database\Log;
+use Drupal\Core\Database\StatementInterface;
 
 /**
  * Used to replace '' character in queries.
@@ -194,7 +195,7 @@ class Connection extends DatabaseConnection {
 
     // Setup session attributes.
     try {
-      $stmt = $this->prepareQuery("SELECT setup_session() FROM dual");
+      $stmt = $this->prepareStatement("SELECT setup_session() FROM dual", []);
       $stmt->execute();
     }
     catch (\Exception $ex) {
@@ -335,7 +336,7 @@ class Connection extends DatabaseConnection {
           }
         }
 
-        $stmt = $this->prepareQuery($query);
+        $stmt = $this->prepareStatement($query, $options);
         $args = $this->cleanupArgs($args);
       }
 
@@ -617,6 +618,7 @@ class Connection extends DatabaseConnection {
       $this->logger = NULL;
       return $logger;
     }
+
     return NULL;
   }
 
@@ -706,9 +708,9 @@ class Connection extends DatabaseConnection {
   }
 
   /**
-   * Oracle connection helper.
+   * {@inheritdoc}
    */
-  public function prepareQuery($query) {
+  public function prepareStatement(string $query, array $options, bool $allow_row_count = FALSE): StatementInterface {
     $query = str_replace(ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, 'C##', $query);
     $query = $this->escapeEmptyLiterals($query);
     $query = $this->escapeAnsi($query);
@@ -719,7 +721,7 @@ class Connection extends DatabaseConnection {
     $query = $this->escapeCompatibility($query);
     $query = $this->prefixTables($query);
     $query = $this->escapeIfFunction($query);
-    return $this->prepare($query);
+    return parent::prepareStatement($query, $options, $allow_row_count);
   }
 
   /**

@@ -39,7 +39,7 @@ class Insert extends QueryInsert {
       $this->queryOptions['return'] = Database::RETURN_NULL;
     }
 
-    $stmt = $this->connection->prepareQuery((string) $this);
+    $stmt = $this->connection->prepareStatement((string) $this, $this->queryOptions);
 
     if (!empty($this->fromQuery)) {
       foreach ($this->fromQuery->getArguments() as $key => $value) {
