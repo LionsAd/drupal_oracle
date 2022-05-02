@@ -8,6 +8,7 @@ use Drupal\Core\Database\Database;
 use Drupal\Core\Database\Connection as DatabaseConnection;
 use Drupal\Core\Database\Log;
 use Drupal\Core\Database\StatementInterface;
+use Drupal\Core\Database\StatementWrapper;
 
 /**
  * Used to replace '' character in queries.
@@ -183,6 +184,11 @@ class Connection extends DatabaseConnection {
   /**
    * {@inheritdoc}
    */
+  protected $statementWrapperClass = StatementWrapper::class;
+
+   /**
+    * {@inheritdoc}
+    */
   public function __construct(\PDO $connection, array $connection_options = array()) {
     parent::__construct($connection, $connection_options);
 
@@ -227,6 +233,11 @@ class Connection extends DatabaseConnection {
       }
     }
   }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected $identifierQuotes = ['"', '"'];
 
   /**
    * {@inheritdoc}
@@ -422,6 +433,8 @@ class Connection extends DatabaseConnection {
    * {@inheritdoc}
    */
   public function queryTemporary($query, array $args = array(), array $options = array()) {
+    @trigger_error('Connection::queryTemporary() is deprecated in drupal:9.3.0 and is removed from drupal:10.0.0. There is no replacement. See https://www.drupal.org/node/3211781', E_USER_DEPRECATED);
+
     $tablename = $this->generateTemporaryTableName();
     try {
       $this->query('DROP TABLE {' . $tablename . '}');
