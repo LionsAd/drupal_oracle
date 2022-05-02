@@ -144,7 +144,7 @@ as
   function check_db_prefix(p_db_prefix varchar2)
   return varchar2
   as pragma autonomous_transaction;
-    v_db_prefix   varchar2(30):= upper(get_for(p_db_prefix));
+    v_db_prefix   varchar2(30):= concat('C##', upper(get_for(p_db_prefix)));
   begin
 
      select username
@@ -156,7 +156,8 @@ as
 
   exception
     when no_data_found then
-      execute immediate 'grant connect, resource to "'||v_db_prefix||'" identified by "'||v_db_prefix||'"';
+      execute immediate 'grant connect, resource to "'||v_db_prefix||'" identified by "'||v_db_prefix||'" container=all';
+      execute immediate 'ALTER USER "'||v_db_prefix||'" quota unlimited on "USERS"';
       return v_db_prefix;
   end;
 
