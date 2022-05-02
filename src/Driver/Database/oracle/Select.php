@@ -59,13 +59,17 @@ class Select extends QuerySelect {
     $fields = array();
     foreach ($this->tables as $alias => $table) {
       if (!empty($table['all_fields'])) {
-        $fields[] = $alias . '.*';
+        $fields[] = $this->connection->escapeAlias($alias) . '.*';
       }
     }
     foreach ($this->fields as $alias => $field) {
+      // Note that $field['table'] holds the table_alias.
+      // @see \Drupal\Core\Database\Query\Select::addField
+      $table = isset($field['table']) ? $field['table'] . '.' : '';
+
       // Always use the AS keyword for field aliases, as some
       // databases require it (e.g., PostgreSQL).
-      $fields[] = (isset($field['table']) ? $field['table'] . '.' : '') . $field['field'] . ' AS ' . $field['alias'];
+      $fields[] = $this->connection->escapeField($table . $field['field']) . ' AS ' . $this->connection->escapeAlias($field['alias']);
     }
     foreach ($this->expressions as $alias => $expression) {
       // Check if it isn't comparison expression. If it is so the we need to
@@ -79,7 +83,7 @@ class Select extends QuerySelect {
         }
       }
 
-      $fields[] = $expression_string . ' AS ' . $expression['alias'];
+      $fields[] = $expression_string . ' AS ' . $this->connection->escapeAlias($expression['alias']);
     }
     $query .= implode(', ', $fields);
 
@@ -94,7 +98,10 @@ class Select extends QuerySelect {
 
       // If the table is a subquery, compile it and integrate it into the query.
       if ($table['table'] instanceof SelectInterface) {
-        $table_string = '(' . (string) $table['table'] . ')';
+        // Run preparation steps on this sub-query before converting to string.
+        $subquery = $table['table'];
+        $subquery->preExecute();
+        $table_string = '(' . (string) $subquery . ')';
       }
       else {
         $table_string = $this->connection->escapeTable($table['table']);
@@ -107,10 +114,10 @@ class Select extends QuerySelect {
 
       // Don't use the AS keyword for table aliases, as some
       // databases don't support it (e.g., Oracle).
-      $query .= $table_string . ' ' . $table['alias'];
+      $query .= $table_string . ' ' . $this->connection->escapeAlias($table['alias']);
 
       if (!empty($table['condition'])) {
-        $query .= ' ON ' . $table['condition'];
+        $query .= ' ON ' . (string) $table['condition'];
       }
     }
 
@@ -152,7 +159,7 @@ class Select extends QuerySelect {
       $query .= "\nORDER BY ";
       $fields = array();
       foreach ($this->order as $field => $direction) {
-        $fields[] = $field . ' ' . $direction;
+        $fields[] = $this->connection->escapeField($field) . ' ' . $direction;
       }
       $query .= implode(', ', $fields);
     }

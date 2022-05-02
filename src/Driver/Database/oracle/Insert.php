@@ -101,6 +101,10 @@ class Insert extends QueryInsert {
     // Default fields are always placed first for consistency.
     $insert_fields = array_merge($this->defaultFields, $this->insertFields);
 
+    $insert_fields = array_map(function ($f) {
+      return $this->connection->escapeField($f);
+    }, $insert_fields);
+
     if (!empty($this->fromQuery)) {
       $cols = implode(', ', $insert_fields);
       if (!empty($cols)) {
@@ -123,7 +127,7 @@ class Insert extends QueryInsert {
       $i = 0;
       foreach ($this->insertFields as $idx => $field) {
         if (isset($table_information->blob_fields[strtoupper($field)])) {
-          $blobs[$field] = ':db_insert_placeholder_' . $i++;
+          $blobs[$this->connection->escapeField($field)] = ':db_insert_placeholder_' . $i++;
           $placeholders[] = 'EMPTY_BLOB()';
         }
         else {
