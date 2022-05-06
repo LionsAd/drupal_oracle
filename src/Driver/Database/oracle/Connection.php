@@ -8,7 +8,7 @@ use Drupal\Core\Database\Database;
 use Drupal\Core\Database\Connection as DatabaseConnection;
 use Drupal\Core\Database\Log;
 use Drupal\Core\Database\StatementInterface;
-use Drupal\Core\Database\StatementWrapper;
+use Drupal\oracle\Driver\Database\oracle\StatementWrapper;
 
 /**
  * Used to replace '' character in queries.
@@ -179,7 +179,7 @@ class Connection extends DatabaseConnection {
   /**
    * {@inheritdoc}
    */
-  protected $statementClass = 'Drupal\oracle\Driver\Database\oracle\Statement';
+  protected $statementClass = NULL;
 
   /**
    * {@inheritdoc}
@@ -440,7 +440,7 @@ class Connection extends DatabaseConnection {
 
     try {
       $logger = $this->pauseLog();
-      $stmt = $this->prepare($query);
+      $stmt = new $this->statementWrapperClass($this, $this->connection, $query, []);
       $stmt->execute($args);
       $this->continueLog($logger);
       return $stmt;
