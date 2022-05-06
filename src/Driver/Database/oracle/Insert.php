@@ -26,6 +26,13 @@ class Insert extends QueryInsert {
       return NULL;
     }
 
+    // Cleanup arg values
+    foreach ($this->insertValues as &$insert_values) {
+      foreach ($this->insertFields as $idx => $field) {
+        $insert_values[$idx] = $this->connection->cleanupArgValue($insert_values[$idx]);
+      }
+    }
+
     $table_information = $this->connection->schema()->queryTableInformation($this->table);
     $sequence_name = NULL;
     if (!empty($table_information->sequences)) {
