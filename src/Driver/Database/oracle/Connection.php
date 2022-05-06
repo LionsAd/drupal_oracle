@@ -320,97 +320,26 @@ class Connection extends DatabaseConnection {
    * {@inheritdoc}
    */
   public function query($query, array $args = [], $options = []) {
+    $this->expandArguments($query, $args);
+    $args = $this->cleanupArgs($args);
+
     // Use default values if not already set.
     $options += $this->defaultOptions();
 
-    if (isset($options['target'])) {
-      @trigger_error('Passing a \'target\' key to \\Drupal\\Core\\Database\\Connection::query $options argument is deprecated in drupal:8.0.x and will be removed before drupal:9.0.0. Instead, use \\Drupal\\Core\\Database\\Database::getConnection($target)->query(). See https://www.drupal.org/node/2993033', E_USER_DEPRECATED);
+    $return_last_id = FALSE;
+    if (($options['return'] ?? Database::RETURN_STATEMENT) == Database::RETURN_INSERT_ID) {
+      $return_last_id = TRUE;
+      unset($options['return']);
     }
 
-    try {
-      if ($query instanceof \PDOStatement) {
-        $stmt = $query;
-      }
-      else {
-        $this->expandArguments($query, $args);
+    $result = parent::query($query, $args, $options);
 
-        // To protect against SQL injection, Drupal only supports executing one
-        // statement at a time.  Thus, the presence of a SQL delimiter (the
-        // semicolon) is not allowed unless the option is set.  Allowing
-        // semicolons should only be needed for special cases like defining a
-        // function or stored procedure in SQL.
-        // @see https://www.drupal.org/project/drupal/issues/2489672
-        if (empty($options['allow_delimiter_in_query'])) {
-          $query = rtrim($query, ";  \t\n\r\0\x0B");
-          if (strpos($query, ';') !== FALSE) {
-            throw new \InvalidArgumentException('; is not supported in SQL strings. Use only one statement at a time.');
-          }
-        }
-
-        $stmt = $this->prepareStatement($query, $options);
-        $args = $this->cleanupArgs($args);
-      }
-
-      $stmt->execute(empty($args) ? NULL : (array) $args, $options);
-
-      switch ($options['return']) {
-        case Database::RETURN_STATEMENT:
-          return $stmt;
-
-        case Database::RETURN_AFFECTED:
-          $stmt->allowRowCount = TRUE;
-          return $stmt->rowCount();
-
-        case Database::RETURN_INSERT_ID:
-          return (isset($options['sequence_name']) ? $this->lastInsertId($options['sequence_name']) : FALSE);
-
-        case Database::RETURN_NULL:
-          return NULL;
-
-        default:
-          throw new \PDOException('Invalid return directive: ' . $options['return']);
-      }
+    // Override the default RETURN_INSERT_ID.
+    if ($return_last_id) {
+      return (isset($options['sequence_name']) ? $this->lastInsertId($options['sequence_name']) : FALSE);
     }
-    catch (\InvalidArgumentException $exception) {
-      throw $exception;
-    }
-    catch (\Exception $e) {
-      if ($options['throw_exception']) {
-        $message = implode([
-          ($query instanceof \PDOStatement) ? $stmt->queryString : $query,
-          (isset($stmt) && $stmt instanceof Statement ? ' (prepared: ' . $stmt->getQueryString() . ' )' : ''),
-          ' e: ' . $e->getMessage(),
-          ' args: ' . print_r($args, TRUE)
-        ]);
-        syslog(LOG_ERR, "error query: " . $message);
 
-        // Prepare the exception to throw.
-        $code = (int) $e->errorInfo[1];
-        if (strpos($e->getMessage(), 'ORA-00001')) {
-          $exception = new IntegrityConstraintViolationException($message, $code, $e);
-        }
-        else {
-          $exception = new DatabaseExceptionWrapper($message, $code, $e);
-        }
-
-        // @todo: check whe do we need this?
-        $exception->errorInfo = $e->errorInfo;
-        if ($code === 1) {
-          $exception->errorInfo[0] = '23000';
-        }
-
-        // Ignore allowed errors.
-        if (isset($options['oracle_exceptions_allowed']) &&
-          in_array($code, $options['oracle_exceptions_allowed'], FALSE)) {
-          return NULL;
-        }
-
-        // Throw an exception otherwise.
-        throw $exception;
-      }
-
-      return NULL;
-    }
+    return $result;
   }
 
   /**
