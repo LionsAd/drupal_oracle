@@ -8,6 +8,7 @@ use Drupal\Core\Database\Database;
 use Drupal\Core\Database\Connection as DatabaseConnection;
 use Drupal\Core\Database\Log;
 use Drupal\Core\Database\StatementInterface;
+use Drupal\oracle\Driver\Database\oracle\Statement;
 use Drupal\oracle\Driver\Database\oracle\StatementWrapper;
 
 /**
@@ -179,7 +180,7 @@ class Connection extends DatabaseConnection {
   /**
    * {@inheritdoc}
    */
-  protected $statementClass = NULL;
+  protected $statementClass = Statement::class;
 
   /**
    * {@inheritdoc}
