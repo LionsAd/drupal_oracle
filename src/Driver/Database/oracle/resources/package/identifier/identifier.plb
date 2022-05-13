@@ -139,25 +139,6 @@ as
       return;
   end;
 
-  procedure write_blob(p_hash varchar2, p_blobid out number, p_blob out blob)
-  as
-  begin
-    select blobid,
-           content
-      into p_blobid,
-           p_blob
-      from blobs
-     where hash= p_hash
-     for update;
-
-  exception
-   when no_data_found then
-    insert into blobs (blobid,content,hash)
-         values (seq_blobs.nextval,empty_blob,p_hash)
-      returning blobid, content into p_blobid,
-                                     p_blob;
-  end;
-
   function check_db_prefix(p_db_prefix varchar2)
   return varchar2
   as pragma autonomous_transaction;
