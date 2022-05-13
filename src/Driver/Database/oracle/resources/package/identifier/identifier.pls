@@ -35,8 +35,6 @@ as
   return serial_info_tab
   pipelined;
 
-  procedure write_blob(p_hash varchar2, p_blobid out number, p_blob out blob);
-
   function check_db_prefix(p_db_prefix varchar2)
   return varchar2;
 

@@ -25,9 +25,6 @@ class Schema extends DatabaseSchema {
    */
   protected $driverTables = [
     'BIND_TEST',
-    'BLOBS',
-    'BLOB_COLUMN',
-    'USED_BLOBS',
     'LONG_IDENTIFIERS',
     'ORACLE_BIND_SIZE',
   ];
