@@ -300,7 +300,7 @@ class Schema extends DatabaseSchema {
       unset($spec['not null']);
     }
 
-    if ($spec['oracle_type'] == 'varchar2') {
+    if ($spec['oracle_type'] == 'VARCHAR2') {
       $sql .= '(' . (!empty($spec['length']) ? $spec['length'] : ORACLE_MAX_VARCHAR2_LENGTH) . ' CHAR)';
     }
     elseif (!empty($spec['length'])) {
@@ -333,47 +333,48 @@ class Schema extends DatabaseSchema {
     // Put :normal last so it gets preserved by array_flip. This makes
     // it much easier for modules (such as schema.module) to map
     // database types back into schema types.
-    $map = array(
-      'varchar_ascii:normal' => 'varchar2',
+    static $map = [
+      'varchar_ascii:normal' => 'VARCHAR2',
 
-      'varchar:normal' => 'varchar2',
-      'char:normal' => 'char',
+      'varchar:normal'  => 'VARCHAR2',
+      'char:normal'     => 'CHAR',
 
-      'text:tiny' => 'varchar2',
-      'text:small' => 'varchar2',
-      'text:medium' => 'varchar2',
-      'text:big' => 'varchar2',
-      'text:normal' => 'varchar2',
+      'text:tiny'       => 'VARCHAR2',
+      'text:small'      => 'VARCHAR2',
+      'text:medium'     => 'CLOB',
+      'text:big'        => 'CLOB',
+      'text:normal'     => 'CLOB',
 
-      'int:tiny' => 'number',
-      'int:small' => 'number',
-      'int:medium' => 'number',
-      'int:big' => 'number',
-      'int:normal' => 'number',
+      'serial:tiny'     => 'NUMBER',
+      'serial:small'    => 'NUMBER',
+      'serial:medium'   => 'NUMBER',
+      'serial:big'      => 'NUMBER',
+      'serial:normal'   => 'NUMBER',
 
-      'float:tiny' => 'number',
-      'float:small' => 'number',
-      'float:medium' => 'number',
-      'float:big' => 'number',
-      'float:normal' => 'number',
+      'int:tiny'        => 'NUMBER',
+      'int:small'       => 'NUMBER',
+      'int:medium'      => 'NUMBER',
+      'int:big'         => 'NUMBER',
+      'int:normal'      => 'NUMBER',
 
-      'numeric:normal' => 'number',
+      'float:tiny'      => 'FLOAT',
+      'float:small'     => 'FLOAT',
+      'float:medium'    => 'FLOAT',
+      'float:big'       => 'DOUBLE PRECISION',
+      'float:normal'    => 'FLOAT',
 
-      'blob:big' => 'varchar2',
-      'blob:normal' => 'varchar2',
+      'numeric:normal'  => 'DOUBLE PRECISION',
 
+      'blob:big'        => 'BLOB',
+      'blob:normal'     => 'BLOB',
+
+      // @TODO Recheck this.
       'date:normal' => 'date',
 
       'datetime:normal' => 'timestamp with local time zone',
       'timestamp:normal' => 'timestamp',
       'time:normal'     => 'timestamp',
-
-      'serial:tiny' => 'number',
-      'serial:small' => 'number',
-      'serial:medium' => 'number',
-      'serial:big' => 'number',
-      'serial:normal' => 'number',
-    );
+    ];
 
     return $map;
   }
@@ -706,6 +707,22 @@ class Schema extends DatabaseSchema {
     }
 
     return $field;
+  }
+
+  /**
+   * Returns Oracle specific field type infomration.
+   */
+  protected function getNumberPrecisionMap() {
+    // @TODO Use this for serial and int.
+    static $map = [
+      'tiny'     => 3,
+      'small'    => 5,
+      'medium'   => 7,
+      'big'      => 19,
+      'normal'   => 10,
+    ];
+
+    return $map;
   }
 
   /**
