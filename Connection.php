@@ -848,6 +848,52 @@ class Connection extends DatabaseConnection {
   }
 
   /**
+   * Add a new savepoint with a unique name.
+   *
+   * The main use for this method is to mimic InnoDB functionality, which
+   * provides an inherent savepoint before any query in a transaction.
+   *
+   * @param $savepoint_name
+   *   A string representing the savepoint name. By default,
+   *   "mimic_implicit_commit" is used.
+   *
+   * @see Drupal\Core\Database\Connection::pushTransaction()
+   */
+  public function addSavepoint($savepoint_name = 'mimic_implicit_commit') {
+    if ($this->inTransaction()) {
+      $this->pushTransaction($savepoint_name);
+    }
+  }
+
+  /**
+   * Release a savepoint by name.
+   *
+   * @param $savepoint_name
+   *   A string representing the savepoint name. By default,
+   *   "mimic_implicit_commit" is used.
+   *
+   * @see Drupal\Core\Database\Connection::popTransaction()
+   */
+  public function releaseSavepoint($savepoint_name = 'mimic_implicit_commit') {
+    if (isset($this->transactionLayers[$savepoint_name])) {
+      $this->popTransaction($savepoint_name);
+    }
+  }
+
+  /**
+   * Rollback a savepoint by name if it exists.
+   *
+   * @param $savepoint_name
+   *   A string representing the savepoint name. By default,
+   *   "mimic_implicit_commit" is used.
+   */
+  public function rollbackSavepoint($savepoint_name = 'mimic_implicit_commit') {
+    if (isset($this->transactionLayers[$savepoint_name])) {
+      $this->rollBack($savepoint_name);
+    }
+  }
+
+  /**
    * Cleaned query string.
    *
    * 1) Long identifiers placeholders.
