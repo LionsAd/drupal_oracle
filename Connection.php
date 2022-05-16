@@ -27,11 +27,23 @@ define('ORACLE_IDENTIFIER_MAX_LENGTH', 128);
 define('ORACLE_LONG_IDENTIFIER_PREFIX', 'L#');
 
 /**
+ * Prefix used for BLOB values.
+ */
+define('ORACLE_BLOB_PREFIX', 'B^#');
+
+/**
  * Maximum length (in bytes) for a string value in a table column in oracle.
  *
  * Affects schema.inc table creation.
  */
 define('ORACLE_MAX_VARCHAR2_LENGTH', 4000);
+
+/**
+ * Maximum length of a string that PDO_OCI can handle.
+ *
+ * Affects runtime blob creation.
+ */
+define('ORACLE_MIN_PDO_BIND_LENGTH', 4000);
 
 /**
  * Alias used for queryRange filtering (we have to remove that from resultsets).
@@ -66,6 +78,11 @@ class Connection extends DatabaseConnection {
   protected $statementClass = 'Drupal\Driver\Database\oracle\Statement';
 
   /**
+   * @todo proper description.
+   */
+  private $maxVarchar2Size = ORACLE_MIN_PDO_BIND_LENGTH;
+
+  /**
    * {@inheritdoc}
    */
   public function __construct(\PDO $connection, array $connection_options = array()) {
@@ -77,6 +94,22 @@ class Connection extends DatabaseConnection {
 
     // Transactional DDL is not available in Oracle.
     $this->transactionalDDLSupport = FALSE;
+
+    // Setup session attributes.
+    try {
+      $stmt = parent::prepare("begin ? := setup_session; end;");
+      $stmt->bindParam(1, $this->maxVarchar2Size, \PDO::PARAM_INT | \PDO::PARAM_INPUT_OUTPUT, 32);
+      $stmt->execute();
+    }
+    catch (\Exception $ex) {
+      // Ignore at install time or external databases.
+      // Fallback to minimum bind size.
+      $this->maxVarchar2Size = ORACLE_MIN_PDO_BIND_LENGTH;
+
+      // Connected to an external oracle database (not necessarily a drupal
+      // schema).
+      $this->external = TRUE;
+    }
 
     // Ensure all used Oracle prefixes (users schemas) exists.
     foreach ($this->prefixes as $table_name => $prefix) {
@@ -816,6 +849,9 @@ class Connection extends DatabaseConnection {
     if ($value === '') {
       return ORACLE_EMPTY_STRING_REPLACER;
     }
+    if (is_string($value) && strlen($value) > $this->maxVarchar2Size) {
+      return $this->writeBlob($value);
+    }
     return $value;
   }
 
@@ -847,13 +883,45 @@ class Connection extends DatabaseConnection {
     return $ret;
   }
 
-  public function addSavepoint() {
+  /**
+   * Oracle connection helper.
+   */
+  public function writeBlob($value) {
+    $hash = md5($value);
+    $stmt = $this->connection->prepare("select blobid from blobs where hash = :hash");
+    $stmt->bindParam(':hash', $hash, \PDO::PARAM_STR);
+    $stmt->execute();
+    $handle = $stmt->fetchColumn();
+
+    if (empty($handle)) {
+      $stream = Connection::stringToStream($value);
+      $transaction = $this->startTransaction();
+      $stmt = $this->prepareQuery("insert into blobs (blobid, content, hash) VALUES (seq_blobs.nextval, EMPTY_BLOB(), :hash) RETURNING content INTO :content");
+      $stmt->bindParam(':hash', $hash, \PDO::PARAM_STR);
+      $stmt->bindParam(':content', $stream, \PDO::PARAM_LOB);
+      $stmt->execute();
+      unset($transaction);
+      $handle = $this->lastInsertId("seq_blobs");
+    }
+
+    $handle = ORACLE_BLOB_PREFIX . $handle;
+    return $handle;
   }
 
-  public function releaseSavepoint() {
-  }
+  /**
+   * Oracle connection helper.
+   */
+  public function readBlob($handle) {
+    $handle = (int) substr($handle, strlen(ORACLE_BLOB_PREFIX));
+    $stmt = parent::prepare("select content from blobs where blobid= ?");
+    $stmt->bindParam(1, $handle, \PDO::PARAM_INT);
+    $stmt->execute();
+    $return = $stmt->fetchColumn();
 
-  public function rollbackSavepoint() {
+    if (!empty($return)) {
+      return $return;
+    }
+    return '';
   }
 
   /**
@@ -930,6 +998,9 @@ class Connection extends DatabaseConnection {
       if ($value == ORACLE_EMPTY_STRING_REPLACER) {
         return '';
       }
+      elseif ($this->isBlob($value)) {
+        return $this->readBlob($value);
+      }
       else {
         return $value;
       }
@@ -953,6 +1024,23 @@ class Connection extends DatabaseConnection {
    */
   public static function isLongIdentifier($key) {
     return (substr(strtoupper($key), 0, strlen(ORACLE_LONG_IDENTIFIER_PREFIX)) == ORACLE_LONG_IDENTIFIER_PREFIX);
+  }
+
+  /**
+   * Oracle connection helper.
+   */
+  public static function isBlob($value) {
+    return (substr($value, 0, strlen(ORACLE_BLOB_PREFIX)) == ORACLE_BLOB_PREFIX);
+  }
+
+  /**
+   * Oracle connection helper.
+   */
+  private static function stringToStream($value) {
+    $stream = fopen('php://memory', 'a');
+    fwrite($stream, $value);
+    rewind($stream);
+    return $stream;
   }
 
   /**
