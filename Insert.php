@@ -60,11 +60,25 @@ class Insert extends QueryInsert {
       else {
         foreach ($this->insertValues as &$insert_values) {
           $max_placeholder = 0;
+          $blobs = [];
+          $blob_count = 0;
           foreach ($this->insertFields as $idx => $field) {
             $insert_values[$idx] = $this->connection->cleanupArgValue($insert_values[$idx]);
-            $stmt->bindParam(':db_insert_placeholder_' . $max_placeholder++, $insert_values[$idx]);
+
+            if (isset($table_information->blob_fields[strtoupper($field)])) {
+              $blobs[$blob_count] = fopen('php://memory', 'a');
+              fwrite($blobs[$blob_count], $insert_values[$idx]);
+              rewind($blobs[$blob_count]);
+              $stmt->bindParam(':db_insert_placeholder_' . $max_placeholder++, $blobs[$blob_count], \PDO::PARAM_LOB);
+
+              // Pre-increment is faster in PHP than increment.
+              ++$blob_count;
+            }
+            else {
+              $stmt->bindParam(':db_insert_placeholder_' . $max_placeholder++, $insert_values[$idx]);
+            }
           }
-          $last_insert_id = $this->connection->query($stmt, $insert_values, $this->queryOptions);
+          $last_insert_id = $this->connection->query($stmt, [], $this->queryOptions);
         }
       }
     }
@@ -87,7 +101,7 @@ class Insert extends QueryInsert {
    * {@inheritdoc}
    */
   public function __toString() {
-    $info = $this->connection->schema()->queryTableInformation($this->table);
+    $table_information = $this->connection->schema()->queryTableInformation($this->table);
 
     // Default fields are always placed first for consistency.
     $insert_fields = array_merge($this->defaultFields, $this->insertFields);
@@ -106,14 +120,25 @@ class Insert extends QueryInsert {
 
     $max_placeholder = 0;
     $values = array();
+    $blobs = [];
+
     if (count($this->insertValues)) {
       $placeholders = array();
       $placeholders = array_pad($placeholders, count($this->defaultFields), 'default');
       $i = 0;
-      foreach ($this->insertFields as $key => $value) {
-        $placeholders[] = ':db_insert_placeholder_' . $i++;
+      foreach ($this->insertFields as $idx => $field) {
+        if (isset($table_information->blob_fields[strtoupper($field)])) {
+          $blobs[$field] = ':db_insert_placeholder_' . $i++;
+          $placeholders[] = 'EMPTY_BLOB()';
+        }
+        else {
+          $placeholders[] = ':db_insert_placeholder_' . $i++;
+        }
       }
       $values = '(' . implode(', ', $placeholders) . ')';
+      if (!empty($blobs)) {
+        $values .= ' RETURNING ' . implode(', ', array_keys($blobs)) . ' INTO ' . implode(', ', array_values($blobs));
+      }
     }
     else {
       if (count($this->defaultFields) > 0) {
