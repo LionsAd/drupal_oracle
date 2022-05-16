@@ -1,10 +1,10 @@
 <?php
 
-namespace Drupal\Driver\Database\oracle\Install;
+namespace Drupal\oracle\Driver\Database\oracle\Install;
 
 use Drupal\Core\Database\Install\Tasks as InstallTasks;
 use Drupal\Core\Database\Database;
-use Drupal\Driver\Database\oracle\Connection;
+use Drupal\oracle\Driver\Database\oracle\Connection;
 
 /**
  * Specifies installation tasks for Oracle and equivalent databases.
@@ -56,7 +56,8 @@ class Tasks extends InstallTasks {
       // This doesn't actually test the connection.
       Database::setActiveConnection();
 
-      $dir = DRUPAL_ROOT . '/drivers/lib/Drupal/Driver/Database/oracle/resources';
+      $dir = __DIR__ . '/../resources';
+
       $this->determineSupportedBindSize();
       $this->createFailsafeObjects("{$dir}/table");
       $this->createFailsafeObjects("{$dir}/index");

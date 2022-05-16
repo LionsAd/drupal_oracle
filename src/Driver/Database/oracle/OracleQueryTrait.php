@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\Driver\Database\oracle;
+namespace Drupal\oracle\Driver\Database\oracle;
 
 use Drupal\Core\Database\Query\Condition;
 use Drupal\Core\Database\Query\ConditionInterface;
