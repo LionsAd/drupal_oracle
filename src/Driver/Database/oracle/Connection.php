@@ -208,6 +208,9 @@ class Connection extends DatabaseConnection {
         if ($this->prefixes[$table_name]) {
           $this->prefixes[$table_name] = $this->prefixes[$table_name]->fetchColumn();
         }
+        else {
+          $this->prefixes[$table_name] = 'C##' . strtoupper($prefix);
+        }
       }
     }
   }
@@ -274,11 +277,19 @@ class Connection extends DatabaseConnection {
       $this->prefixes = ['default' => strtoupper($prefix)];
     }
 
+    $prefixes = $this->prefixes;
+    // Ensure prefixes are prefixed with the 'C##'.
+    foreach ($prefixes as $table_name => $prefix) {
+      if (!empty($prefix)) {
+        $prefixes[$table_name] = 'C##' . strtoupper($prefix);
+      }
+    }
+
     // Set up variables for use in prefixTables(). Replace table-specific
     // prefixes first.
     $this->prefixSearch = [];
     $this->prefixReplace = [];
-    foreach ($this->prefixes as $table_name => $prefix) {
+    foreach ($prefixes as $table_name => $prefix) {
       if ($table_name !== 'default') {
 
         // Set up a map of prefixed => un-prefixed tables.
@@ -297,10 +308,10 @@ class Connection extends DatabaseConnection {
     $this->prefixSearch[] = '{';
     $this->prefixSearch[] = '}';
 
-    if ($this->prefixes['default']) {
+    if ($prefixes['default']) {
       $this->prefixReplace[] = '{';
       $this->prefixReplace[] = '}';
-      $this->prefixReplace[] = $this->schema()->oid($this->prefixes['default']) . '."';
+      $this->prefixReplace[] = $this->schema()->oid($prefixes['default']) . '."';
       $this->prefixReplace[] = '"';
     }
     else {
