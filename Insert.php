@@ -26,10 +26,17 @@ class Insert extends QueryInsert {
       return NULL;
     }
 
-    $info = $this->connection->schema()->queryTableInformation($this->table);
-    if (!empty($info->sequence_name)) {
-      $this->queryOptions['sequence_name'] = $info->sequence_name;
+    $table_information = $this->connection->schema()->queryTableInformation($this->table);
+    // Oracle requires the table name to be specified explicitly
+    // when requesting the last insert ID, so we pass that in via
+    // the options array.
+    if (!empty($table_information->sequences)) {
+      $this->queryOptions['sequence_name'] = $table_information->sequences[0];
       $this->queryOptions['return'] = Database::RETURN_INSERT_ID;
+    }
+    // If there are no sequences then we can't get a last insert id.
+    elseif ($options['return'] == Database::RETURN_INSERT_ID) {
+      $this->queryOptions['return'] = Database::RETURN_NULL;
     }
 
     $stmt = $this->connection->prepareQuery((string) $this);
