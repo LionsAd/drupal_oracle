@@ -10,6 +10,8 @@ use Drupal\Core\Database\Query\SelectInterface;
  */
 class Select extends QuerySelect {
 
+  use OracleQueryTrait;
+
   /**
    * The connection object on which to run this query.
    *
