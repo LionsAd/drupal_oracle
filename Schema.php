@@ -221,6 +221,7 @@ class Schema extends DatabaseSchema {
     }
     $this->rebuildDefaultsTrigger($name);
     $this->resetLongIdentifiers();
+    $this->resetTableInformation($name);
   }
 
   /**
