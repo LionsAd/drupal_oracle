@@ -35,9 +35,13 @@ class Schema extends DatabaseSchema {
   /**
    * A cache of information about blob columns and sequences of tables.
    *
+   * This is collected by Schema::queryTableInformation(), by introspecting the
+   * database.
+   *
+   * @see \Drupal\Core\Database\Driver\oracle\Schema::queryTableInformation()
    * @var array
    */
-  protected $driverTableInformation = [];
+  protected $tableInformation = [];
 
   /**
    * @todo description
@@ -77,38 +81,80 @@ class Schema extends DatabaseSchema {
   }
 
   /**
-   * Oracle schema helper.
+   * Fetch the list of blobs and sequences used on a table.
+   *
+   * We introspect the database to collect the information required by insert
+   * and update queries.
+   *
+   * @param $table_name
+   *   The non-prefixed name of the table.
+   * @return
+   *   An object with two member variables:
+   *     - 'blob_fields' that lists all the blob fields in the table.
+   *     - 'sequences' that lists the sequences used in that table.
    */
-  public function getTableInfo($table) {
-    $table_prefixed = $this->connection->prefixTables('{' . $table . '}');
-    $schema = $this->tableSchema($table_prefixed);
+  public function queryTableInformation($table) {
+    $key = $this->getTableInformationKey($table);
 
-    if (!isset($this->driverTableInformation[$table_prefixed])) {
-      $this->driverTableInformation[$table_prefixed] = (object) [];
+    $table_information = (object) [
+      'blob_fields' => [],
+      'sequences' => [],
+    ];
 
-      try {
-        $this->driverTableInformation[$table_prefixed] = $this->connection
-          ->queryOracle('SELECT identifier.sequence_for_table(?,?) sequence_name FROM dual', [$table, $schema])
-          ->fetchObject();
-      }
-      catch (\PDOException $exception) {
-        if ($exception->errorInfo[1] != '00904') {
-          // Ignore (may be a connection to a non drupal schema not having the
-          // identifier pkg). See http://drupal.org/node/1121044.
-          throw $exception;
+    if (empty($this->tableInformation[$key])) {
+      $file = '/tmp/table-info-' . $key . '.txt';
+      if (file_exists($file)) {
+        $data = unserialize(file_get_contents($file));
+        if ($data) {
+          $table_information = $data;
         }
       }
+
+      $this->tableInformation[$key] = $table_information;
     }
 
-    return $this->driverTableInformation[$table_prefixed];
+    return $this->tableInformation[$key];
   }
 
   /**
-   * Oracle schema helper.
+   * HACK
    */
-  public function removeTableInfoCache($table) {
-    $table_prefixed = $this->connection->prefixTables('{' . $table . '}');
-    unset($this->driverTableInformation[$table_prefixed]);
+  public function setTableInformation($table, $table_information) {
+    $key = $this->getTableInformationKey($table);
+
+    $this->tableInformation[$key] = $table_information;
+
+    // @TODO WRITE TO FS.
+    print_r(['TABLE INFO', $table, $table_information]);
+    file_put_contents('/tmp/table-info-' . $key . '.txt', serialize($table_information));
+  }
+
+  /**
+   * Resets information about table blobs, sequences and serial fields.
+   *
+   * @param $table
+   *   The non-prefixed name of the table.
+   */
+  protected function resetTableInformation($table) {
+    $key = $this->getTableInformationKey($table);
+    unset($this->tableInformation[$key]);
+  }
+
+  /**
+   * Returns the key for the tableInformation array for a given table.
+   *
+   * @param $table
+   *   The non-prefixed name of the table.
+   */
+  protected function getTableInformationKey($table) {
+    $key = $this->connection->prefixTables('{' . $table . '}');
+    if (strpos($key, '.') === FALSE) {
+      // @TODO Find current owner
+      $key = 'public.' . $key;
+    }
+    $key = strtoupper(str_replace('"', '', $key));
+
+    return $key;
   }
 
   /**
@@ -262,17 +308,36 @@ class Schema extends DatabaseSchema {
       }
     }
 
+    // Update table_information "cache".
+    $table_information = $this->queryTableInformation($name);
+
+    $sequences = [];
+    $table_information->blob_fields = [];
+    $table_information->sequences = [];
+
     foreach ($table['fields'] as $field_name => $field) {
       if (!isset($field['type'])) {
         continue;
       }
+      $field = $this->processField($field);
       if ($field['type'] == 'serial') {
+        $sequences[strtoupper($field_name)] = $this->oid('SEQ_' . $name . '_' . $field_name, FALSE, FALSE);
+        $table_information->serial_fields[strtoupper($field_name)] = $field_name;
         $statements = array_merge($statements, $this->createSerialSql($name, $field_name));
       }
-      elseif ($field['type'] == 'blob') {
-        $statements[] = "INSERT INTO BLOB_COLUMN VALUES ('" . strtoupper($name) . "','" . strtoupper($field_name) . "')";
+
+      if ($field['oracle_type'] == 'BLOB') {
+        $table_information->blob_fields[strtoupper($field_name)] = $field_name;
       }
     }
+
+    if (!empty($sequences)) {
+      $table_information->sequences = array_values($sequences);
+      // @todo Convert to new sequences
+      $table_information->sequence_name = $table_information->sequences[0];
+    }
+
+    $this->setTableInformation($name, $table_information);
 
     return $statements;
   }
@@ -307,6 +372,11 @@ class Schema extends DatabaseSchema {
       $sql .= '(' . $spec['length'] . ')';
     }
     elseif (isset($spec['precision']) && isset($spec['scale'])) {
+      if ($spec['oracle_type'] == 'DOUBLE PRECISION' || $spec['oracle_type'] == 'FLOAT') {
+        // For double and floats and precision and scale only NUMBER is supported.
+        // @todo Check performance at some point.
+        $sql = $oname . ' NUMBER';
+      }
       $sql .= '(' . $spec['precision'] . ', ' . $spec['scale'] . ')';
     }
 
@@ -341,9 +411,11 @@ class Schema extends DatabaseSchema {
 
       'text:tiny'       => 'VARCHAR2',
       'text:small'      => 'VARCHAR2',
-      'text:medium'     => 'CLOB',
-      'text:big'        => 'CLOB',
-      'text:normal'     => 'CLOB',
+      // @todo Those should really be CLOB, but due to data corruption
+      //       it was switched over to BLOB.
+      'text:medium'     => 'BLOB',
+      'text:big'        => 'BLOB',
+      'text:normal'     => 'BLOB',
 
       'serial:tiny'     => 'NUMBER',
       'serial:small'    => 'NUMBER',
@@ -437,7 +509,7 @@ class Schema extends DatabaseSchema {
 //      return $this->connection->query('DROP USER '. strtoupper($table) .' CASCADE');
 //    }
 
-    $info = $this->getTableInfo($table);
+    $info = $this->queryTableInformation($table);
 
     if ($info->sequence_name) {
       $this->connection->query('DROP SEQUENCE ' . $info->sequence_name);
@@ -448,7 +520,7 @@ class Schema extends DatabaseSchema {
     }
 
     $this->connection->query('DROP TABLE ' . $this->oid($table, TRUE) . ' CASCADE CONSTRAINTS PURGE');
-    $this->removeTableInfoCache($table);
+    $this->resetTableInformation($table);
   }
 
   /**
@@ -1265,7 +1337,7 @@ class Schema extends DatabaseSchema {
     }
 
     $this->resetLongIdentifiers();
-    $this->removeTableInfoCache($cache_table);
+    $this->resetTableInformation($cache_table);
     $this->rebuildDefaultsTrigger($trigger_table);
   }
 
