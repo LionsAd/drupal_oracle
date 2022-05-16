@@ -99,15 +99,13 @@ class Schema extends DatabaseSchema {
     ];
 
     if (empty($this->tableInformation[$key])) {
-      $table_name = strtoupper($this->connection->prefixTables('{' . $table . '}'));
-      $schema = $this->tableSchema($table_name);
-      if ($schema) {
-        $exp = explode('.', $table_name, 2);
-        $table_name = strtoupper(str_replace('"', '', $exp[1]));
+      $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+      $table_name = $this->oid($table, FALSE, FALSE);
 
+      if ($schema) {
         $blobs = $this->connection->query("SELECT column_name FROM all_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
           ->fetchCol();
-      $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
+        $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
           ->fetchCol();
         foreach ($sequences as $key => $sequence_name) {
           $full_name =<<<EOF
