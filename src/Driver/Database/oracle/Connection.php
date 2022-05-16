@@ -321,7 +321,6 @@ class Connection extends DatabaseConnection {
     try {
       if ($query instanceof \PDOStatement) {
         $stmt = $query;
-        $stmt->execute(empty($args) ? NULL : $args, $options);
       }
       else {
         $this->expandArguments($query, $args);
