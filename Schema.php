@@ -369,9 +369,11 @@ class Schema extends DatabaseSchema {
 
       'text:tiny'       => 'VARCHAR2',
       'text:small'      => 'VARCHAR2',
-      'text:medium'     => 'CLOB',
-      'text:big'        => 'CLOB',
-      'text:normal'     => 'CLOB',
+      // @todo Those should really be CLOB, but due to data corruption
+      //       it was switched over to BLOB.
+      'text:medium'     => 'BLOB',
+      'text:big'        => 'BLOB',
+      'text:normal'     => 'BLOB',
 
       'int:tiny'        => 'NUMBER',
       'int:small'       => 'NUMBER',
