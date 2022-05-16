@@ -35,7 +35,7 @@ class Insert extends QueryInsert {
       $this->queryOptions['return'] = Database::RETURN_INSERT_ID;
     }
     // If there are no sequences then we can't get a last insert id.
-    elseif ($options['return'] == Database::RETURN_INSERT_ID) {
+    elseif ($this->queryOptions['return'] == Database::RETURN_INSERT_ID) {
       $this->queryOptions['return'] = Database::RETURN_NULL;
     }
 
