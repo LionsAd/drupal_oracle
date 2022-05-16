@@ -61,7 +61,7 @@ class Update extends QueryUpdate {
     $i = 0;
 
     foreach ($this->fields as $field => $value) {
-      if (isset($table_information->blob_fields[strtoupper($field)])) {
+      if (isset($table_information->blob_fields[strtoupper($field)]) && $value !== NULL) {
         $blobs[$this->connection->escapeField(strtoupper($field))] = ':db_update_placeholder_' . $i;
       }
 
