@@ -206,7 +206,7 @@ class Connection extends DatabaseConnection {
             'oracle_exceptions_allowed' => ['06575', '00904'],
             ]);
         if ($this->prefixes[$table_name]) {
-          $this->prefixes[$table_name] = $this->prefixes[$table_name]->fetchColumn();
+          $this->prefixes[$table_name] = $this->prefixes[$table_name]->fetchField();
         }
         else {
           $this->prefixes[$table_name] = 'C##' . strtoupper($prefix);
@@ -685,7 +685,7 @@ class Connection extends DatabaseConnection {
     }
 
     try {
-      return $this->queryOracle($this->prefixTables('SELECT ' . $name . '.currval from dual'))->fetchColumn();
+      return $this->queryOracle($this->prefixTables('SELECT ' . $name . '.currval from dual'))->fetchField();
     }
     catch (\Exception $e) {
       // Ignore if CURRVAL not set. May be an insert that specified the serial
@@ -699,7 +699,7 @@ class Connection extends DatabaseConnection {
    */
   public function generateTemporaryTableName() {
     // @todo: create a cleanup job.
-    $session_id = $this->queryOracle("SELECT userenv('sessionid') FROM dual")->fetchColumn();
+    $session_id = $this->queryOracle("SELECT userenv('sessionid') FROM dual")->fetchField();
     return 'TMP_' . $session_id . '_' . $this->temporaryNameIndex++;
   }
 

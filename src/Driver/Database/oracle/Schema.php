@@ -55,7 +55,7 @@ class Schema extends DatabaseSchema {
       $this->foundLongIdentifier = TRUE;
       $return = $this->connection
         ->queryOracle('SELECT identifier.get_for(?) FROM dual', [strtoupper($return)])
-        ->fetchColumn();
+        ->fetchField();
     }
 
     $return = $prefix ? '{' . $return . '}' : strtoupper($return);
