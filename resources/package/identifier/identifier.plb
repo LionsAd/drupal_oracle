@@ -161,7 +161,7 @@ as
   function check_db_prefix(p_db_prefix varchar2)
   return varchar2
   as pragma autonomous_transaction;
-    v_db_prefix   varchar2(30):= upper(get_for(p_db_prefix));
+    v_db_prefix   varchar2(30):= concat('C##', upper(get_for(p_db_prefix)));
   begin
 
      select username
@@ -173,7 +173,7 @@ as
 
   exception
     when no_data_found then
-      execute immediate 'GRANT connect, resource to "'||v_db_prefix||'" identified by "'||v_db_prefix||'"';
+      execute immediate 'GRANT connect, resource to "'||v_db_prefix||'" identified by "'||v_db_prefix||'" container=all';
 
       -- Allow to allocate as much space as needed.
       -- Required for a proper tests run.
