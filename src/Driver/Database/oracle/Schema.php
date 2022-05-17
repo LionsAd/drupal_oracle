@@ -671,25 +671,84 @@ EOF;
    * {@inheritdoc}
    */
   public function fieldSetDefault($table, $field, $default) {
+    @trigger_error('fieldSetDefault() is deprecated in drupal:8.7.0 and will be removed before drupal:9.0.0. Instead, call ::changeField() passing a full field specification. See https://www.drupal.org/node/2999035', E_USER_DEPRECATED);
+    if (!$this->fieldExists($table, $field)) {
+      throw new SchemaObjectDoesNotExistException(t("Cannot set default value of field @table.@field: field doesn't exist.", ['@table' => $table, '@field' => $field]));
+    }
+
+    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    if ($schema) {
+      $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
+        $this->oid($field, FALSE, FALSE),
+        $this->oid($table, FALSE, FALSE),
+        $schema,
+      ))->fetchField();
+    }
+    else {
+      $is_not_null = $this->connection->query("SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ? AND nullable = 'N'", array(
+        $this->oid($field, FALSE, FALSE),
+        $this->oid($table, FALSE, FALSE),
+      ))->fetchField();
+    }
+
     $on_null = '';
     if (is_null($default)) {
       $default = 'NULL';
     }
     else {
-      // @todo There might be cases where the column is not actually NOT NULL,
-      //       but there is no way to know without looking at the Drupal schema.
-      $on_null = 'ON NULL ';
+      if ($is_not_null) {
+        $on_null = 'ON NULL ';
+      }
+
       $default = is_string($default) ? $this->connection->quote($this->connection->cleanupArgValue($default)) : $default;
     }
 
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT ' . $on_null . $default . ' )');
+
+    // Oracle does get confused from the NULL and removes the NOT NULL CONSTRAINT
+    // so we have to bring it back.
+    if ($is_not_null) {
+      // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
+      $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
+        '01442',
+      ]);
+    }
   }
 
   /**
    * {@inheritdoc}
    */
   public function fieldSetNoDefault($table, $field) {
+    @trigger_error('fieldSetNoDefault() is deprecated in drupal:8.7.0 and will be removed before drupal:9.0.0. Instead, call ::changeField() passing a full field specification. See https://www.drupal.org/node/2999035', E_USER_DEPRECATED);
+    if (!$this->fieldExists($table, $field)) {
+      throw new SchemaObjectDoesNotExistException(t("Cannot remove default value of field @table.@field: field doesn't exist.", ['@table' => $table, '@field' => $field]));
+    }
+
+    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    if ($schema) {
+      $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
+        $this->oid($field, FALSE, FALSE),
+        $this->oid($table, FALSE, FALSE),
+        $schema,
+      ))->fetchField();
+    }
+    else {
+      $is_not_null = $this->connection->query("SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ? AND nullable = 'N'", array(
+        $this->oid($field, FALSE, FALSE),
+        $this->oid($table, FALSE, FALSE),
+      ))->fetchField();
+    }
+
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT NULL)');
+
+    // Oracle does get confused from the NULL and removes the NOT NULL CONSTRAINT
+    // so we have to bring it back.
+    if ($is_not_null) {
+      // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
+      $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
+        '01442',
+      ]);
+    }
   }
 
   /**
