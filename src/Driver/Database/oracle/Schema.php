@@ -514,10 +514,18 @@ EOF;
 
     // Prepare new field definition.
     $field_def = $spec['oracle_type'];
-    if ($spec['oracle_type'] === 'varchar2') {
+    if ($spec['oracle_type'] == 'VARCHAR2') {
       $field_def .= '(' . (!empty($spec['length']) ? $spec['length'] : ORACLE_MAX_VARCHAR2_LENGTH) . ' CHAR)';
     }
-    elseif (isset($spec['precision'], $spec['scale'])) {
+    elseif (!empty($spec['length'])) {
+      $field_def .= '(' . $spec['length'] . ')';
+    }
+    elseif (isset($spec['precision']) && isset($spec['scale'])) {
+      if ($spec['oracle_type'] == 'DOUBLE PRECISION' || $spec['oracle_type'] == 'FLOAT') {
+        // For double and floats and precision and scale only NUMBER is supported.
+        // @todo Check performance at some point.
+        $field_def = 'NUMBER';
+      }
       $field_def .= '(' . $spec['precision'] . ', ' . $spec['scale'] . ')';
     }
 
