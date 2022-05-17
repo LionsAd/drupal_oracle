@@ -192,6 +192,17 @@ class Connection extends DatabaseConnection {
     // Transactional DDL is not available in Oracle.
     $this->transactionalDDLSupport = FALSE;
 
+    // Setup session attributes.
+    try {
+      $stmt = parent::prepare("begin setup_session; end;");
+      $stmt->execute();
+    }
+    catch (\Exception $ex) {
+      // Connected to an external oracle database (not necessarily a drupal
+      // schema).
+      $this->external = TRUE;
+    }
+
     // Ensure all used Oracle prefixes (users schemas) exists.
     foreach ($this->prefixes as $table_name => $prefix) {
       if (!empty($prefix)) {
