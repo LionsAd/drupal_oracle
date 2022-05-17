@@ -640,7 +640,7 @@ EOF;
       $field['oracle_type'] = $map[$field['type'] . ':' . $field['size']];
     }
 
-    if ($field['type'] == 'serial') {
+    if (!empty($field['type']) && $field['type'] == 'serial') {
       $field['identity'] = TRUE;
     }
 
