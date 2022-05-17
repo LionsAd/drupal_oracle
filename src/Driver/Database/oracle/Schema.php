@@ -24,9 +24,7 @@ class Schema extends DatabaseSchema {
    * An array of driver internal tables names.
    */
   protected $driverTables = [
-    'BIND_TEST',
     'LONG_IDENTIFIERS',
-    'ORACLE_BIND_SIZE',
   ];
 
   /**
