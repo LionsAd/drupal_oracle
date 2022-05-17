@@ -531,12 +531,26 @@ EOF;
 
     // Convert the field type and check for the error:
     // "ORA-01439: column to be modified must be empty to change datatype".
-    if (!$this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY ' . $this->oid($field) . ' ' . $field_def, [], ['01439'])) {
+    // "ORA-22858: invalid alteration of datatype".
+    // "ORA-22859: invalid modification of columns".
+    if (!$this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY ' . $this->oid($field) . ' ' . $field_def, [], ['01439', '22858', '22859'])) {
+      $table_information = $this->queryTableInformation($table);
+
       $this->connection->query('ALTER TABLE {' . $table . '} RENAME COLUMN ' . $this->oid($field) . ' TO ' . $this->oid($field . '_old'));
       $not_null = isset($spec['not null']) ? $spec['not null'] : FALSE;
       unset($spec['not null']);
       $this->addField($table, $field, $spec);
-      $this->connection->query('UPDATE {' . $table . '} SET ' . $this->oid($field) . ' = ' . $this->oid($field . '_old'));
+
+      // If we change from TEXT to BLOB we need to use a different syntax, but
+      // BLOB to BLOB is fine.
+      // @todo Support BLOB -> TEXT as well
+      if ($spec['oracle_type'] != 'BLOB' || !empty($table_information->blob_fields[$this->oid($field, FALSE, FALSE)])) {
+        $this->connection->query('UPDATE {' . $table . '} SET ' . $this->oid($field) . ' = ' . $this->oid($field . '_old'));
+      }
+      else {
+        $this->connection->query('UPDATE {' . $table . '} SET ' . $this->oid($field) . ' = to_blob(utl_raw.cast_to_raw(' . $this->oid($field . '_old') . '))');
+      }
+
       if ($not_null) {
         $this->connection->query('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)');
       }
