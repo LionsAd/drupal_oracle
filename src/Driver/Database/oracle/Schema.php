@@ -351,7 +351,7 @@ EOF;
     $oname = $this->oid($new_name, TRUE);
 
     // Should not use prefix because schema is not needed on rename.
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' RENAME TO ' . $this->oid($new_name, TRUE));
+    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' RENAME TO ' . $this->oid($new_name, FALSE));
 
     // Rename indexes.
     $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
