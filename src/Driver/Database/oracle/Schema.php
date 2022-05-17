@@ -533,7 +533,7 @@ EOF;
     // "ORA-01439: column to be modified must be empty to change datatype".
     // "ORA-22858: invalid alteration of datatype".
     // "ORA-22859: invalid modification of columns".
-    if (!$this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY ' . $this->oid($field) . ' ' . $field_def, [], ['01439', '22858', '22859'])) {
+    if (!empty($spec['identity']) || !$this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY ' . $this->oid($field) . ' ' . $field_def, [], ['01439', '22858', '22859'])) {
       $table_information = $this->queryTableInformation($table);
 
       $this->connection->query('ALTER TABLE {' . $table . '} RENAME COLUMN ' . $this->oid($field) . ' TO ' . $this->oid($field . '_old'));
@@ -552,9 +552,29 @@ EOF;
       }
 
       if ($not_null) {
-        $this->connection->query('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)');
+        // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
+        $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
+          '01442',
+        ]);
       }
       $this->dropField($table, $field . '_old');
+
+      // Update primary index because if needed.
+      if (in_array($field, $index_schema['primary key'], TRUE)) {
+        $index_schema['primary key'][array_search($field, $index_schema['primary key'], TRUE)] = $field_new;
+        $this->dropPrimaryKey($table);
+        $this->addPrimaryKey($table, $index_schema['primary key']);
+      }
+
+      // Set new keys.
+      if (isset($keys_new)) {
+        $this->createKeys($table, $keys_new);
+      }
+
+      $this->cleanUpSchema($table);
+
+      // Return early as we added a new field.
+      return;
     }
 
     // Remove old default.
