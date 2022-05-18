@@ -39,6 +39,11 @@ define('ORACLE_MAX_VARCHAR2_LENGTH', 4000);
 define('ORACLE_ROWNUM_ALIAS', 'RWN_TO_REMOVE');
 
 /**
+ * Placeholder used to ensure the C## survives.
+ */
+define('ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER', 'C__ORACLE_DRIVER_FULL_QUALIFIED_TABLE_NAME');
+
+/**
  * @addtogroup database
  * @{
  */
@@ -585,7 +590,7 @@ class Connection extends DatabaseConnection {
     // Local Naming Parameters configuration (by default is located in the
     // $ORACLE_HOME/network/admin/tnsnames.ora). This Driver DO NOT support
     // auto creation of database links for the connection.
-    return $prefix . '.' . $table . '@' . $options['database'];
+    return str_replace('C##', ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, $prefix) . '.' . strtoupper($table) . '@' . $options['database'];
   }
 
   /**
@@ -744,6 +749,7 @@ class Connection extends DatabaseConnection {
    * Oracle connection helper.
    */
   public function prepareQuery($query) {
+    $query = str_replace(ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, 'C##', $query);
     $query = $this->escapeEmptyLiterals($query);
     $query = $this->escapeAnsi($query);
     if (!$this->external) {
