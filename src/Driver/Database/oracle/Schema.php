@@ -24,9 +24,7 @@ class Schema extends DatabaseSchema {
    * An array of driver internal tables names.
    */
   protected $driverTables = [
-    'BIND_TEST',
     'LONG_IDENTIFIERS',
-    'ORACLE_BIND_SIZE',
   ];
 
   /**
@@ -55,7 +53,7 @@ class Schema extends DatabaseSchema {
       $this->foundLongIdentifier = TRUE;
       $return = $this->connection
         ->queryOracle('SELECT identifier.get_for(?) FROM dual', [strtoupper($return)])
-        ->fetchColumn();
+        ->fetchField();
     }
 
     $return = $prefix ? '{' . $return . '}' : strtoupper($return);
@@ -99,15 +97,13 @@ class Schema extends DatabaseSchema {
     ];
 
     if (empty($this->tableInformation[$key])) {
-      $table_name = strtoupper($this->connection->prefixTables('{' . $table . '}'));
-      $schema = $this->tableSchema($table_name);
-      if ($schema) {
-        $exp = explode('.', $table_name, 2);
-        $table_name = strtoupper(str_replace('"', '', $exp[1]));
+      $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+      $table_name = $this->oid($table, FALSE, FALSE);
 
+      if ($schema) {
         $blobs = $this->connection->query("SELECT column_name FROM all_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
           ->fetchCol();
-      $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
+        $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
           ->fetchCol();
         foreach ($sequences as $key => $sequence_name) {
           $full_name =<<<EOF
@@ -355,7 +351,7 @@ EOF;
     $oname = $this->oid($new_name, TRUE);
 
     // Should not use prefix because schema is not needed on rename.
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' RENAME TO ' . $this->oid($new_name, TRUE));
+    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' RENAME TO ' . $this->oid($new_name, FALSE));
 
     // Rename indexes.
     $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
@@ -518,25 +514,67 @@ EOF;
 
     // Prepare new field definition.
     $field_def = $spec['oracle_type'];
-    if ($spec['oracle_type'] === 'varchar2') {
+    if ($spec['oracle_type'] == 'VARCHAR2') {
       $field_def .= '(' . (!empty($spec['length']) ? $spec['length'] : ORACLE_MAX_VARCHAR2_LENGTH) . ' CHAR)';
     }
-    elseif (isset($spec['precision'], $spec['scale'])) {
+    elseif (!empty($spec['length'])) {
+      $field_def .= '(' . $spec['length'] . ')';
+    }
+    elseif (isset($spec['precision']) && isset($spec['scale'])) {
+      if ($spec['oracle_type'] == 'DOUBLE PRECISION' || $spec['oracle_type'] == 'FLOAT') {
+        // For double and floats and precision and scale only NUMBER is supported.
+        // @todo Check performance at some point.
+        $field_def = 'NUMBER';
+      }
       $field_def .= '(' . $spec['precision'] . ', ' . $spec['scale'] . ')';
     }
 
     // Convert the field type and check for the error:
     // "ORA-01439: column to be modified must be empty to change datatype".
-    if (!$this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY ' . $this->oid($field) . ' ' . $field_def, [], ['01439'])) {
+    // "ORA-22858: invalid alteration of datatype".
+    // "ORA-22859: invalid modification of columns".
+    if (!empty($spec['identity']) || !$this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY ' . $this->oid($field) . ' ' . $field_def, [], ['01439', '22858', '22859'])) {
+      $table_information = $this->queryTableInformation($table);
+
       $this->connection->query('ALTER TABLE {' . $table . '} RENAME COLUMN ' . $this->oid($field) . ' TO ' . $this->oid($field . '_old'));
       $not_null = isset($spec['not null']) ? $spec['not null'] : FALSE;
       unset($spec['not null']);
       $this->addField($table, $field, $spec);
-      $this->connection->query('UPDATE {' . $table . '} SET ' . $this->oid($field) . ' = ' . $this->oid($field . '_old'));
+
+      // If we change from TEXT to BLOB we need to use a different syntax, but
+      // BLOB to BLOB is fine.
+      // @todo Support BLOB -> TEXT as well
+      if ($spec['oracle_type'] != 'BLOB' || !empty($table_information->blob_fields[$this->oid($field, FALSE, FALSE)])) {
+        $this->connection->query('UPDATE {' . $table . '} SET ' . $this->oid($field) . ' = ' . $this->oid($field . '_old'));
+      }
+      else {
+        $this->connection->query('UPDATE {' . $table . '} SET ' . $this->oid($field) . ' = to_blob(utl_raw.cast_to_raw(' . $this->oid($field . '_old') . '))');
+      }
+
       if ($not_null) {
-        $this->connection->query('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)');
+        // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
+        $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
+          '01442',
+        ]);
       }
       $this->dropField($table, $field . '_old');
+
+      // Update primary index because if needed.
+      if (in_array($field, $index_schema['primary key'], TRUE)) {
+        $index_schema['primary key'][array_search($field, $index_schema['primary key'], TRUE)] = $field_new;
+        $this->dropPrimaryKey($table);
+        $this->addPrimaryKey($table, $index_schema['primary key']);
+      }
+
+      // Set new keys.
+      if (isset($keys_new)) {
+        $this->createKeys($table, $keys_new);
+      }
+
+      $this->cleanUpSchema($table);
+
+      // Return early as we added a new field.
+      return;
     }
 
     // Remove old default.
@@ -622,7 +660,7 @@ EOF;
       $field['oracle_type'] = $map[$field['type'] . ':' . $field['size']];
     }
 
-    if ($field['type'] == 'serial') {
+    if (!empty($field['type']) && $field['type'] == 'serial') {
       $field['identity'] = TRUE;
     }
 
@@ -633,25 +671,84 @@ EOF;
    * {@inheritdoc}
    */
   public function fieldSetDefault($table, $field, $default) {
+    @trigger_error('fieldSetDefault() is deprecated in drupal:8.7.0 and will be removed before drupal:9.0.0. Instead, call ::changeField() passing a full field specification. See https://www.drupal.org/node/2999035', E_USER_DEPRECATED);
+    if (!$this->fieldExists($table, $field)) {
+      throw new SchemaObjectDoesNotExistException(t("Cannot set default value of field @table.@field: field doesn't exist.", ['@table' => $table, '@field' => $field]));
+    }
+
+    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    if ($schema) {
+      $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
+        $this->oid($field, FALSE, FALSE),
+        $this->oid($table, FALSE, FALSE),
+        $schema,
+      ))->fetchField();
+    }
+    else {
+      $is_not_null = $this->connection->query("SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ? AND nullable = 'N'", array(
+        $this->oid($field, FALSE, FALSE),
+        $this->oid($table, FALSE, FALSE),
+      ))->fetchField();
+    }
+
     $on_null = '';
     if (is_null($default)) {
       $default = 'NULL';
     }
     else {
-      // @todo There might be cases where the column is not actually NOT NULL,
-      //       but there is no way to know without looking at the Drupal schema.
-      $on_null = 'ON NULL ';
+      if ($is_not_null) {
+        $on_null = 'ON NULL ';
+      }
+
       $default = is_string($default) ? $this->connection->quote($this->connection->cleanupArgValue($default)) : $default;
     }
 
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT ' . $on_null . $default . ' )');
+
+    // Oracle does get confused from the NULL and removes the NOT NULL CONSTRAINT
+    // so we have to bring it back.
+    if ($is_not_null) {
+      // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
+      $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
+        '01442',
+      ]);
+    }
   }
 
   /**
    * {@inheritdoc}
    */
   public function fieldSetNoDefault($table, $field) {
+    @trigger_error('fieldSetNoDefault() is deprecated in drupal:8.7.0 and will be removed before drupal:9.0.0. Instead, call ::changeField() passing a full field specification. See https://www.drupal.org/node/2999035', E_USER_DEPRECATED);
+    if (!$this->fieldExists($table, $field)) {
+      throw new SchemaObjectDoesNotExistException(t("Cannot remove default value of field @table.@field: field doesn't exist.", ['@table' => $table, '@field' => $field]));
+    }
+
+    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    if ($schema) {
+      $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
+        $this->oid($field, FALSE, FALSE),
+        $this->oid($table, FALSE, FALSE),
+        $schema,
+      ))->fetchField();
+    }
+    else {
+      $is_not_null = $this->connection->query("SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ? AND nullable = 'N'", array(
+        $this->oid($field, FALSE, FALSE),
+        $this->oid($table, FALSE, FALSE),
+      ))->fetchField();
+    }
+
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT NULL)');
+
+    // Oracle does get confused from the NULL and removes the NOT NULL CONSTRAINT
+    // so we have to bring it back.
+    if ($is_not_null) {
+      // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
+      $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
+        '01442',
+      ]);
+    }
   }
 
   /**
@@ -659,21 +756,25 @@ EOF;
    *
    * @param string $table
    *   The name of the table.
+   * @param string $prefix
+   *   The prefix of the constraint (typically 'PK' or 'UK').
    * @param string $name
-   *   The name of the constraint (typically 'pkey' or '[constraint]__key').
+   *   The name of the constraint (optional)
    *
    * @return bool
    *   TRUE if the constraint exists, FALSE otherwise.
    */
-  public function constraintExists($table, $name) {
+  public function constraintExists($table, $prefix, $name = '') {
     $table_name = $this->oid($table, FALSE, FALSE);
-    $constraint_name = $this->oid($name . '_' . $table, FALSE, FALSE);
+    if ($name != '') {
+      $name = '_' . $name;
+    }
+    $constraint_name = $this->oid($prefix . '_' . $table . $name, FALSE, FALSE);
     $constraint_schema = $this->connection->tablePrefix($table);
     return (bool) $this->connection->query("
      SELECT constraint_name
        FROM all_constraints
-      WHERE constraint_type = 'P'
-        AND constraint_name = :constraint_name
+      WHERE constraint_name = :constraint_name
         AND table_name = :table_name
         AND owner = :constraint_schema", [
       ':table_name' => $table_name,
@@ -796,6 +897,13 @@ EOF;
    * {@inheritdoc}
    */
   public function addUniqueKey($table, $name, $fields) {
+    if (!$this->tableExists($table)) {
+      throw new SchemaObjectDoesNotExistException(t("Cannot add unique key @name to table @table: table doesn't exist.", ['@table' => $table, '@name' => $name]));
+    }
+    if ($this->constraintExists($table, 'UK', $name)) {
+      throw new SchemaObjectExistsException(t("Cannot add unique key @name to table @table: unique key already exists.", ['@table' => $table, '@name' => $name]));
+    }
+
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' ADD CONSTRAINT ' . $this->oid('UK_' . $table . '_' . $name) . ' UNIQUE (' . $this->createColsSql($fields) . ')');
   }
 
@@ -803,7 +911,12 @@ EOF;
    * {@inheritdoc}
    */
   public function dropUniqueKey($table, $name) {
+    if (!$this->constraintExists($table, 'UK', $name)) {
+      return FALSE;
+    }
+
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' DROP CONSTRAINT ' . $this->oid('UK_' . $table . '_' . $name));
+    return TRUE;
   }
 
   /**

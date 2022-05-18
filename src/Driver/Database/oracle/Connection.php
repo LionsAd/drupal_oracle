@@ -39,6 +39,11 @@ define('ORACLE_MAX_VARCHAR2_LENGTH', 4000);
 define('ORACLE_ROWNUM_ALIAS', 'RWN_TO_REMOVE');
 
 /**
+ * Placeholder used to ensure the C## survives.
+ */
+define('ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER', 'C__ORACLE_DRIVER_FULL_QUALIFIED_TABLE_NAME');
+
+/**
  * @addtogroup database
  * @{
  */
@@ -192,6 +197,17 @@ class Connection extends DatabaseConnection {
     // Transactional DDL is not available in Oracle.
     $this->transactionalDDLSupport = FALSE;
 
+    // Setup session attributes.
+    try {
+      $stmt = parent::prepare("begin setup_session; end;");
+      $stmt->execute();
+    }
+    catch (\Exception $ex) {
+      // Connected to an external oracle database (not necessarily a drupal
+      // schema).
+      $this->external = TRUE;
+    }
+
     // Ensure all used Oracle prefixes (users schemas) exists.
     foreach ($this->prefixes as $table_name => $prefix) {
       if (!empty($prefix)) {
@@ -206,7 +222,10 @@ class Connection extends DatabaseConnection {
             'oracle_exceptions_allowed' => ['06575', '00904'],
             ]);
         if ($this->prefixes[$table_name]) {
-          $this->prefixes[$table_name] = $this->prefixes[$table_name]->fetchColumn();
+          $this->prefixes[$table_name] = $this->prefixes[$table_name]->fetchField();
+        }
+        else {
+          $this->prefixes[$table_name] = 'C##' . strtoupper($prefix);
         }
       }
     }
@@ -274,11 +293,19 @@ class Connection extends DatabaseConnection {
       $this->prefixes = ['default' => strtoupper($prefix)];
     }
 
+    $prefixes = $this->prefixes;
+    // Ensure prefixes are prefixed with the 'C##'.
+    foreach ($prefixes as $table_name => $prefix) {
+      if (!empty($prefix)) {
+        $prefixes[$table_name] = 'C##' . strtoupper($prefix);
+      }
+    }
+
     // Set up variables for use in prefixTables(). Replace table-specific
     // prefixes first.
     $this->prefixSearch = [];
     $this->prefixReplace = [];
-    foreach ($this->prefixes as $table_name => $prefix) {
+    foreach ($prefixes as $table_name => $prefix) {
       if ($table_name !== 'default') {
 
         // Set up a map of prefixed => un-prefixed tables.
@@ -297,10 +324,10 @@ class Connection extends DatabaseConnection {
     $this->prefixSearch[] = '{';
     $this->prefixSearch[] = '}';
 
-    if ($this->prefixes['default']) {
+    if ($prefixes['default']) {
       $this->prefixReplace[] = '{';
       $this->prefixReplace[] = '}';
-      $this->prefixReplace[] = $this->schema()->oid($this->prefixes['default']) . '."';
+      $this->prefixReplace[] = $this->schema()->oid($prefixes['default']) . '."';
       $this->prefixReplace[] = '"';
     }
     else {
@@ -318,10 +345,13 @@ class Connection extends DatabaseConnection {
     // Use default values if not already set.
     $options += $this->defaultOptions();
 
+    if (isset($options['target'])) {
+      @trigger_error('Passing a \'target\' key to \\Drupal\\Core\\Database\\Connection::query $options argument is deprecated in drupal:8.0.x and will be removed before drupal:9.0.0. Instead, use \\Drupal\\Core\\Database\\Database::getConnection($target)->query(). See https://www.drupal.org/node/2993033', E_USER_DEPRECATED);
+    }
+
     try {
       if ($query instanceof \PDOStatement) {
         $stmt = $query;
-        $stmt->execute(empty($args) ? NULL : $args, $options);
       }
       else {
         $this->expandArguments($query, $args);
@@ -560,7 +590,7 @@ class Connection extends DatabaseConnection {
     // Local Naming Parameters configuration (by default is located in the
     // $ORACLE_HOME/network/admin/tnsnames.ora). This Driver DO NOT support
     // auto creation of database links for the connection.
-    return $prefix . '.' . $table . '@' . $options['database'];
+    return str_replace('C##', ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, $prefix) . '.' . strtoupper($table) . '@' . $options['database'];
   }
 
   /**
@@ -675,7 +705,7 @@ class Connection extends DatabaseConnection {
     }
 
     try {
-      return $this->queryOracle($this->prefixTables('SELECT ' . $name . '.currval from dual'))->fetchColumn();
+      return $this->queryOracle($this->prefixTables('SELECT ' . $name . '.currval from dual'))->fetchField();
     }
     catch (\Exception $e) {
       // Ignore if CURRVAL not set. May be an insert that specified the serial
@@ -689,7 +719,7 @@ class Connection extends DatabaseConnection {
    */
   public function generateTemporaryTableName() {
     // @todo: create a cleanup job.
-    $session_id = $this->queryOracle("SELECT userenv('sessionid') FROM dual")->fetchColumn();
+    $session_id = $this->queryOracle("SELECT userenv('sessionid') FROM dual")->fetchField();
     return 'TMP_' . $session_id . '_' . $this->temporaryNameIndex++;
   }
 
@@ -719,6 +749,7 @@ class Connection extends DatabaseConnection {
    * Oracle connection helper.
    */
   public function prepareQuery($query) {
+    $query = str_replace(ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, 'C##', $query);
     $query = $this->escapeEmptyLiterals($query);
     $query = $this->escapeAnsi($query);
     if (!$this->external) {

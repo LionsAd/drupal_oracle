@@ -1,7 +1,4 @@
 create or replace function setup_session
-return number
-as
-   v_bind_size   number;
 begin
 
     -- force cursor sharing to prevent unfair modules (read more on cursor_sharing http://www.oracle.com/technology/oramag/oracle/06-jan/o16asktom.html)
@@ -22,11 +19,5 @@ begin
     -- use the same type of comparison that MySQL use for like operators (remember to execute the create_linguistic_indexes procedure when you install new modules)
     --execute immediate 'ALTER SESSION SET NLS_COMP=LINGUISTIC';
     --execute immediate 'ALTER SESSION SET NLS_SORT=BINARY_CI';
-
-    select val
-      into v_bind_size
-      from oracle_bind_size;
-
-    return v_bind_size;
 
 end;
