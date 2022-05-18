@@ -51,7 +51,7 @@ trait OracleQueryTrait {
   public function splitIn(&$condition) {
     // The environment variable below is useful for testing/debugging.
     $max_size = getenv('ORACLE_IN_MAX_SIZE') ?: 999;
-    if (isset($condition['operator']) && $condition['operator'] == 'IN' && count($condition['value']) > $max_size) {
+    if (isset($condition['operator']) && $condition['operator'] == 'IN' && is_array($condition['value']) && count($condition['value']) > $max_size) {
       $chunks = array_chunk($condition['value'], $max_size);
       $group = $this->orConditionGroup();
       foreach ($chunks as $chunk) {
