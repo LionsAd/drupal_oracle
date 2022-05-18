@@ -47,6 +47,13 @@ class Tasks extends InstallTasks {
    * {@inheritdoc}
    */
   protected function connect() {
+    // If there is a table prefix we are running inside a test or connecting to external database.
+    $prefix = Database::getConnection()->tablePrefix('DRUPAL_INSTALL_TEST');
+    if ($prefix != '') {
+      Database::getConnection('default')->makePrimary();
+      return TRUE;
+    }
+
     try {
       // This doesn't actually test the connection.
       Database::setActiveConnection();
