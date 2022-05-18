@@ -756,21 +756,25 @@ EOF;
    *
    * @param string $table
    *   The name of the table.
+   * @param string $prefix
+   *   The prefix of the constraint (typically 'PK' or 'UK').
    * @param string $name
-   *   The name of the constraint (typically 'pkey' or '[constraint]__key').
+   *   The name of the constraint (optional)
    *
    * @return bool
    *   TRUE if the constraint exists, FALSE otherwise.
    */
-  public function constraintExists($table, $name) {
+  public function constraintExists($table, $prefix, $name = '') {
     $table_name = $this->oid($table, FALSE, FALSE);
-    $constraint_name = $this->oid($name . '_' . $table, FALSE, FALSE);
+    if ($name != '') {
+      $name = '_' . $name;
+    }
+    $constraint_name = $this->oid($prefix . '_' . $table . $name, FALSE, FALSE);
     $constraint_schema = $this->connection->tablePrefix($table);
     return (bool) $this->connection->query("
      SELECT constraint_name
        FROM all_constraints
-      WHERE constraint_type = 'P'
-        AND constraint_name = :constraint_name
+      WHERE constraint_name = :constraint_name
         AND table_name = :table_name
         AND owner = :constraint_schema", [
       ':table_name' => $table_name,
@@ -893,6 +897,13 @@ EOF;
    * {@inheritdoc}
    */
   public function addUniqueKey($table, $name, $fields) {
+    if (!$this->tableExists($table)) {
+      throw new SchemaObjectDoesNotExistException(t("Cannot add unique key @name to table @table: table doesn't exist.", ['@table' => $table, '@name' => $name]));
+    }
+    if ($this->constraintExists($table, 'UK', $name)) {
+      throw new SchemaObjectExistsException(t("Cannot add unique key @name to table @table: unique key already exists.", ['@table' => $table, '@name' => $name]));
+    }
+
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' ADD CONSTRAINT ' . $this->oid('UK_' . $table . '_' . $name) . ' UNIQUE (' . $this->createColsSql($fields) . ')');
   }
 
@@ -900,7 +911,12 @@ EOF;
    * {@inheritdoc}
    */
   public function dropUniqueKey($table, $name) {
+    if (!$this->constraintExists($table, 'UK', $name)) {
+      return FALSE;
+    }
+
     $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' DROP CONSTRAINT ' . $this->oid('UK_' . $table . '_' . $name));
+    return TRUE;
   }
 
   /**
