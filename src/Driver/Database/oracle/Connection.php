@@ -598,6 +598,13 @@ class Connection extends DatabaseConnection {
     $this->external = FALSE;
   }
 
+ /**
+   * Oracle connection helper.
+   */
+  public function isPrimary() {
+    return !$this->external;
+  }
+
   /**
    * Pause the database logging if any available.
    *
