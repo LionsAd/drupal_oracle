@@ -375,7 +375,8 @@ EOF;
       $this->connection->query('ALTER INDEX ' . $this->oid($row->index_name, TRUE) . ' RENAME TO ' . $this->oid(str_replace(strtoupper($table), strtoupper($new_name), $row->index_name), FALSE));
     }
 
-    $this->cleanUpSchema($table, $new_name);
+    $this->cleanUpSchema($old_table);
+    $this->cleanUpSchema($old_new_name);
   }
 
   /**
@@ -1303,11 +1304,7 @@ EOF;
   /**
    * Oracle schema helper.
    */
-  private function cleanUpSchema($cache_table, $trigger_table = '') {
-    if (!$trigger_table) {
-      $trigger_table = $cache_table;
-    }
-
+  private function cleanUpSchema($cache_table) {
     $this->resetLongIdentifiers();
     $this->resetTableInformation($cache_table);
   }
