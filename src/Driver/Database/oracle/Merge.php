@@ -9,4 +9,19 @@ use Drupal\Core\Database\Query\Merge as QueryMerge;
  */
 class Merge extends QueryMerge {
   use OracleQueryTrait;
+
+  /**
+   * {@inheritdoc}
+   */
+  function execute() {
+    // Workaround a core bug: A field set in an expression should not be set in
+    // the update as well.
+    if ($this->expressionFields) {
+      foreach ($this->expressionFields as $field => $data) {
+        unset($this->updateFields[$field]);
+      }
+    }
+
+    return parent::execute();
+  }
 }
