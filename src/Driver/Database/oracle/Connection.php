@@ -203,6 +203,11 @@ class Connection extends DatabaseConnection {
       $this->external = TRUE;
     }
 
+    // Execute Oracle init_commands.
+    if (isset($connection_options['init_commands'])) {
+      $this->connection->exec(implode('; ', $connection_options['init_commands']));
+    }
+
     // Ensure all used Oracle prefixes (users schemas) exists.
     foreach ($this->prefixes as $table_name => $prefix) {
       if (!empty($prefix) && strpos($prefix, '.') !== FALSE) {
