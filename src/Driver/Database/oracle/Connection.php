@@ -194,7 +194,7 @@ class Connection extends DatabaseConnection {
 
     // Setup session attributes.
     try {
-      $stmt = parent::prepare("begin setup_session; end;");
+      $stmt = $this->prepareQuery("SELECT setup_session() FROM dual");
       $stmt->execute();
     }
     catch (\Exception $ex) {
