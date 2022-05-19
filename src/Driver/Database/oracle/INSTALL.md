@@ -30,3 +30,12 @@ directory: `DRUPAL_ROOT/modules/contrib/oracle.
 Apply all needed patches to the Drupal core and tests run:
  - https://www.drupal.org/files/issues/2019-05-28/2867788-53.patch
  - https://www.drupal.org/files/issues/2020-01-28/drupal-3109651-SchemaTest_precision_limits-3.patch
+
+# Running tests in their own database / schema
+
+This allows to run tests in their own database / schema: e.g. "TEST12345"."FOO" instead of "TEST12345FOO"
+
+```bash
+export ORACLE_RUN_TESTS_IN_EXTRA_DB=1
+../vendor/bin/phpunit core/tests/Drupal/KernelTests/Core/Database/ --filter testDbFindTables
+```
