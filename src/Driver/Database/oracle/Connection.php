@@ -548,7 +548,7 @@ class Connection extends DatabaseConnection {
    */
   public function getFullQualifiedTableName($table) {
     $options = $this->getConnectionOptions();
-    $prefix = $this->tablePrefix($table);
+    [$schema, $table] = $this->schema()->tableSchema($table);
 
     // The fully qualified table name in Oracle Database is in the form of:
     // <user_name>.<table_name>@<database>. Where <database> is either
@@ -556,7 +556,7 @@ class Connection extends DatabaseConnection {
     // Local Naming Parameters configuration (by default is located in the
     // $ORACLE_HOME/network/admin/tnsnames.ora). This Driver DO NOT support
     // auto creation of database links for the connection.
-    return str_replace('C##', ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, $prefix) . '.' . strtoupper($table) . '@' . $options['database'];
+    return str_replace('C##', ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, $schema) . '.' . strtoupper($table) . '@' . $options['database'];
   }
 
   /**
