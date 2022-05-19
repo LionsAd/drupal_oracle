@@ -34,11 +34,6 @@ define('ORACLE_LONG_IDENTIFIER_PREFIX', 'L#');
 define('ORACLE_MAX_VARCHAR2_LENGTH', 4000);
 
 /**
- * Alias used for queryRange filtering (we have to remove that from resultsets).
- */
-define('ORACLE_ROWNUM_ALIAS', 'RWN_TO_REMOVE');
-
-/**
  * Placeholder used to ensure the C## survives.
  */
 define('ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER', 'C__ORACLE_DRIVER_FULL_QUALIFIED_TABLE_NAME');
@@ -1088,11 +1083,8 @@ class Connection extends DatabaseConnection {
 
     if (is_array($f)) {
       foreach ($f as $key => $value) {
-        if ((string) $key == strtolower(ORACLE_ROWNUM_ALIAS)) {
-          unset($f[$key]);
-        }
         // Long identifier.
-        elseif (Connection::isLongIdentifier($key)) {
+        if (Connection::isLongIdentifier($key)) {
           $f[$this->getLongIdentifiersHandler()->longIdentifierKey($key)] = $this->cleanupFetched($value);
           unset($f[$key]);
         }
@@ -1103,11 +1095,8 @@ class Connection extends DatabaseConnection {
     }
     elseif (is_object($f)) {
       foreach ($f as $key => $value) {
-        if ((string) $key == strtolower(ORACLE_ROWNUM_ALIAS)) {
-          unset($f->{$key});
-        }
         // Long identifier.
-        elseif (Connection::isLongIdentifier($key)) {
+        if (Connection::isLongIdentifier($key)) {
           $f->{$this->getLongIdentifiersHandler()->longIdentifierKey($key)} = $this->cleanupFetched($value);
           unset($f->{$key});
         }
