@@ -67,6 +67,23 @@ class Schema extends DatabaseSchema {
 
   /**
    * Oracle schema helper.
+   *
+   * @return string
+   *   The non-prefixed but quoted ($schema.)$name.
+   */
+  public function oidWithSchema($name) {
+    $prefixed = strtoupper(str_replace('"', '', $this->connection->prefixTables('{' . $name . '}')));
+
+    $exp = explode('.', $prefixed, 2);
+    if (count($exp) < 2) {
+      return $this->oid($name);
+    }
+
+    return $this->oid($exp[0]) . '.' . $this->oid($name);
+  }
+
+  /**
+   * Oracle schema helper.
    */
   private function resetLongIdentifiers() {
     if ($this->foundLongIdentifier) {
@@ -372,7 +389,7 @@ EOF;
       ));
     }
     while ($row = $stmt->fetchObject()) {
-      $this->connection->query('ALTER INDEX ' . $this->oid($row->index_name, TRUE) . ' RENAME TO ' . $this->oid(str_replace(strtoupper($table), strtoupper($new_name), $row->index_name), FALSE));
+      $this->connection->query('ALTER INDEX ' . $this->oidWithSchema($row->index_name) . ' RENAME TO ' . $this->oid(str_replace(strtoupper($table), strtoupper($new_name), $row->index_name), FALSE));
     }
 
     $this->cleanUpSchema($old_table);
@@ -962,7 +979,7 @@ EOF;
       return FALSE;
     }
 
-    $this->connection->query('DROP INDEX ' . $this->oid('IDX_' . $table . '_' . $name, TRUE));
+    $this->connection->query('DROP INDEX ' . $this->oidWithSchema('IDX_' . $table . '_' . $name));
     return TRUE;
   }
 
@@ -1167,7 +1184,8 @@ EOF;
    * Oracle schema helper.
    */
   protected function createIndexSql($table, $name, $fields) {
-    $oname = $this->oid('IDX_' . $table . '_' . $name, TRUE);
+    [$schema, $table_name] = $this->tableSchema($table);
+    $oname = $this->oidWithSchema('IDX_' . $table_name . '_' . $name);
 
     $sql = array();
     // Oracle doesn't like multiple indexes on the same column list.
