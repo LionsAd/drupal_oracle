@@ -117,23 +117,16 @@ class Schema extends DatabaseSchema {
       [$schema, $table] = $this->tableSchema($table);
       $table_name = $this->oid($table, FALSE, FALSE);
 
-      if ($schema) {
-        $blobs = $this->connection->query("SELECT column_name FROM all_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
-          ->fetchCol();
-        $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
-          ->fetchCol();
-        foreach ($sequences as $key => $sequence_name) {
-          $full_name =<<<EOF
+      $blobs = $this->connection->query("SELECT column_name FROM all_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
+        ->fetchCol();
+      $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
+        ->fetchCol();
+
+      foreach ($sequences as $key => $sequence_name) {
+        $full_name =<<<EOF
 "$schema"."$sequence_name"
 EOF;
-          $sequences[$key] = str_replace("\n", "", $full_name);
-        }
-      }
-      else {
-        $blobs = $this->connection->query("SELECT column_name FROM user_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table", [':db_table' => $table_name])
-          ->fetchCol();
-        $sequences = $this->connection->query("SELECT sequence_name FROM user_tab_identity_cols WHERE table_name = :db_table", [':db_table' => $table_name])
-          ->fetchCol();
+        $sequences[$key] = str_replace("\n", "", $full_name);
       }
 
       $table_information->blob_fields = array_combine($blobs, $blobs);
@@ -377,17 +370,10 @@ EOF;
     $this->connection->query('ALTER TABLE ' . $oname . ' RENAME TO ' . $this->oid($new_name, FALSE));
 
     // Rename indexes.
-    if ($schema) {
-      $stmt = $this->connection->query("SELECT nvl((select identifier from long_identifiers where 'L#'||to_char(id)= index_name),index_name) index_name FROM all_indexes WHERE table_name= ? and owner= ?", array(
-        $this->oid($new_name, FALSE, FALSE),
-        $schema,
-      ));
-    }
-    else {
-      $stmt = $this->connection->query("SELECT nvl((select identifier from long_identifiers where 'L#'||to_char(id)= index_name),index_name) index_name FROM user_indexes WHERE table_name= ?", array(
-        $this->oid($new_name, FALSE, FALSE),
-      ));
-    }
+    $stmt = $this->connection->query("SELECT nvl((select identifier from long_identifiers where 'L#'||to_char(id)= index_name),index_name) index_name FROM all_indexes WHERE table_name= ? and owner= ?", array(
+      $this->oid($new_name, FALSE, FALSE),
+      $schema,
+    ));
     while ($row = $stmt->fetchObject()) {
       $this->connection->query('ALTER INDEX ' . $this->oidWithSchema($row->index_name) . ' RENAME TO ' . $this->oid(str_replace(strtoupper($table), strtoupper($new_name), $row->index_name), FALSE));
     }
@@ -702,19 +688,11 @@ EOF;
     $oname = $this->oid($table, TRUE);
     [$schema, $table] = $this->tableSchema($table);
 
-    if ($schema) {
-      $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
-        $this->oid($field, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $is_not_null = $this->connection->query("SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ? AND nullable = 'N'", array(
-        $this->oid($field, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
+      $this->oid($field, FALSE, FALSE),
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     $on_null = '';
     if (is_null($default)) {
@@ -751,19 +729,11 @@ EOF;
 
     $oname = $this->oid($table, TRUE);
     [$schema, $table] = $this->tableSchema($table);
-    if ($schema) {
-      $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
-        $this->oid($field, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $is_not_null = $this->connection->query("SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ? AND nullable = 'N'", array(
-        $this->oid($field, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
+      $this->oid($field, FALSE, FALSE),
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     $this->connection->query('ALTER TABLE ' . $oname . ' MODIFY (' . $this->oid($field) . ' DEFAULT NULL)');
 
@@ -991,18 +961,10 @@ EOF;
 
     $oname = $this->oid('IDX_' . $table . '_' . $name, FALSE, FALSE);
 
-    if ($schema) {
-      $retval = $this->connection->query("SELECT 1 FROM all_indexes WHERE index_name = ? and table_name= ? and owner= ?", array(
-        $oname, $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $retval = $this->connection->query("SELECT 1 FROM user_indexes WHERE index_name = ? and table_name= ?", array(
-        $oname,
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $retval = $this->connection->query("SELECT 1 FROM all_indexes WHERE index_name = ? and table_name= ? and owner= ?", array(
+      $oname, $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     if ($retval) {
       return TRUE;
@@ -1018,30 +980,18 @@ EOF;
   public function getComment($table, $column = NULL) {
     [$schema, $table] = $this->tableSchema($table);
 
-    if ($schema) {
-      if (isset($column)) {
-        return $this->connection->query('select comments from all_col_comments where column_name = ? and table_name = ? and owner = ?', array(
-          $this->oid($column, FALSE, FALSE),
-          $this->oid($table, FALSE, FALSE),
-          $schema,
-        ))->fetchField();
-      }
-      return $this->connection->query('select comments from all_tab_comments where table_name = ? and owner = ?', array(
+    if (isset($column)) {
+      return $this->connection->query('select comments from all_col_comments where column_name = ? and table_name = ? and owner = ?', array(
+        $this->oid($column, FALSE, FALSE),
         $this->oid($table, FALSE, FALSE),
         $schema,
       ))->fetchField();
     }
-    else {
-      if (isset($column)) {
-        return $this->connection->query('select comments from user_col_comments where column_name = ? and table_name = ?', array(
-          $this->oid($column, FALSE, FALSE),
-          $this->oid($table, FALSE, FALSE),
-        ))->fetchField();
-      }
-      return $this->connection->query('select comments from user_tab_comments where table_name = ?', array(
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+
+    return $this->connection->query('select comments from all_tab_comments where table_name = ? and owner = ?', array(
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
   }
 
   /**
@@ -1050,17 +1000,10 @@ EOF;
   public function tableExists($table) {
     [$schema, $table] = $this->tableSchema($table);
 
-    if ($schema) {
-      $retval = $this->connection->query("SELECT 1 FROM all_tables WHERE temporary= 'N' and table_name = ? and owner= ?", array(
-        $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $retval = $this->connection->query("SELECT 1 FROM user_tables WHERE temporary= 'N' and table_name = ?", array(
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $retval = $this->connection->query("SELECT 1 FROM all_tables WHERE temporary= 'N' and table_name = ? and owner= ?", array(
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     if ($retval) {
       return TRUE;
@@ -1076,19 +1019,11 @@ EOF;
   public function fieldExists($table, $column) {
     [$schema, $table] = $this->tableSchema($table);
 
-    if ($schema) {
-      $retval = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ?", array(
-        $this->oid($column, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $retval = $this->connection->query('SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ?', array(
-        $this->oid($column, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $retval = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ?", array(
+      $this->oid($column, FALSE, FALSE),
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     if ($retval) {
       return TRUE;
