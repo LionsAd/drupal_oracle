@@ -159,10 +159,14 @@ class Select extends QuerySelect {
 
     // RANGE.
     if (!empty($this->range)) {
-      $start = ((int) $this->range['start'] + 1);
-      $end = ((int) $this->range['length'] + (int) $this->range['start']);
+      $start = ((int) $this->range['start']);
+      $count = ((int) $this->range['length']);
 
-      $query = 'SELECT * FROM (SELECT TAB.*, ROWNUM ' . ORACLE_ROWNUM_ALIAS . ' FROM (' . $query . ') TAB) WHERE ' . ORACLE_ROWNUM_ALIAS . ' BETWEEN ' . $start . ' AND ' . $end;
+      if ($start == 0) {
+        $query .= sprintf(" FETCH FIRST %d ROWS ONLY", $count);
+      } else {
+        $query .= sprintf(" OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", $start, $count);
+      }
     }
 
     return $query;
