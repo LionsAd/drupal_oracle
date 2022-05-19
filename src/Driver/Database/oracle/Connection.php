@@ -589,13 +589,6 @@ class Connection extends DatabaseConnection {
   }
 
   /**
-   * Help method to check if array is associative.
-   */
-  public static function isAssoc($array) {
-    return (is_array($array) && 0 !== count(array_diff_key($array, array_keys(array_keys($array)))));
-  }
-
-  /**
    * Oracle connection helper.
    */
   public function makePrimary() {
@@ -998,21 +991,15 @@ class Connection extends DatabaseConnection {
       return $args;
     }
 
-    $ret = array();
-    if (Connection::isAssoc($args)) {
-      foreach ($args as $key => $value) {
-        $key = Connection::escapeReserved($key);
-
+    $ret = [];
+    foreach ($args as $key => $value) {
+      if (is_string($key)) {
         // Bind variables cannot have reserved names.
+        $key = Connection::escapeReserved($key);
         $key = $this->getLongIdentifiersHandler()->escapeLongIdentifiers($key);
-        $ret[$key] = $this->cleanupArgValue($value);
       }
-    }
-    else {
-      // Indexed array.
-      foreach ($args as $key => $value) {
-        $ret[$key] = $this->cleanupArgValue($value);
-      }
+
+      $ret[$key] = $this->cleanupArgValue($value);
     }
 
     return $ret;
