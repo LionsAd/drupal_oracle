@@ -67,6 +67,23 @@ class Schema extends DatabaseSchema {
 
   /**
    * Oracle schema helper.
+   *
+   * @return string
+   *   The non-prefixed but quoted ($schema.)$name.
+   */
+  public function oidWithSchema($name) {
+    $prefixed = strtoupper(str_replace('"', '', $this->connection->prefixTables('{' . $name . '}')));
+
+    $exp = explode('.', $prefixed, 2);
+    if (count($exp) < 2) {
+      return $this->oid($name);
+    }
+
+    return $this->oid($exp[0]) . '.' . $this->oid($name);
+  }
+
+  /**
+   * Oracle schema helper.
    */
   private function resetLongIdentifiers() {
     if ($this->foundLongIdentifier) {
@@ -97,26 +114,19 @@ class Schema extends DatabaseSchema {
     ];
 
     if (empty($this->tableInformation[$key])) {
-      $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+      [$schema, $table] = $this->tableSchema($table);
       $table_name = $this->oid($table, FALSE, FALSE);
 
-      if ($schema) {
-        $blobs = $this->connection->query("SELECT column_name FROM all_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
-          ->fetchCol();
-        $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
-          ->fetchCol();
-        foreach ($sequences as $key => $sequence_name) {
-          $full_name =<<<EOF
+      $blobs = $this->connection->query("SELECT column_name FROM all_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
+        ->fetchCol();
+      $sequences = $this->connection->query("SELECT sequence_name FROM all_tab_identity_cols WHERE table_name = :db_table AND owner = :db_owner", [':db_table' => $table_name, ':db_owner' => $schema])
+        ->fetchCol();
+
+      foreach ($sequences as $key => $sequence_name) {
+        $full_name =<<<EOF
 "$schema"."$sequence_name"
 EOF;
-          $sequences[$key] = str_replace("\n", "", $full_name);
-        }
-      }
-      else {
-        $blobs = $this->connection->query("SELECT column_name FROM user_tab_columns WHERE data_type = 'BLOB' AND table_name = :db_table", [':db_table' => $table_name])
-          ->fetchCol();
-        $sequences = $this->connection->query("SELECT sequence_name FROM user_tab_identity_cols WHERE table_name = :db_table", [':db_table' => $table_name])
-          ->fetchCol();
+        $sequences[$key] = str_replace("\n", "", $full_name);
       }
 
       $table_information->blob_fields = array_combine($blobs, $blobs);
@@ -183,6 +193,7 @@ EOF;
    *   An array of SQL statements to create the table.
    */
   protected function createTableSql($name, array $table) {
+    [$schema, $table_name] = $this->tableSchema($name);
     $oname = $this->oid($name, TRUE);
 
     $sql_fields = array();
@@ -194,12 +205,12 @@ EOF;
 
     if (!empty($table['primary key']) && is_array($table['primary key'])) {
       $this->ensureNotNullPrimaryKey($table['primary key'], $table['fields']);
-      $sql_keys[] = 'CONSTRAINT ' . $this->oid('PK_' . $name) . ' PRIMARY KEY (' . $this->createColsSql($table['primary key']) . ')';
+      $sql_keys[] = 'CONSTRAINT ' . $this->oid('PK_' . $table_name) . ' PRIMARY KEY (' . $this->createColsSql($table['primary key']) . ')';
     }
 
     if (isset($table['unique keys']) && is_array($table['unique keys'])) {
       foreach ($table['unique keys'] as $key_name => $key) {
-        $sql_keys[] = 'CONSTRAINT ' . $this->oid('UK_' . $name . '_' . $key_name) . ' UNIQUE (' . $this->createColsSql($key) . ')';
+        $sql_keys[] = 'CONSTRAINT ' . $this->oid('UK_' . $table_name . '_' . $key_name) . ' UNIQUE (' . $this->createColsSql($key) . ')';
       }
     }
 
@@ -348,29 +359,27 @@ EOF;
    * {@inheritdoc}
    */
   public function renameTable($table, $new_name) {
-    $oname = $this->oid($new_name, TRUE);
+    $oname = $this->oid($table, TRUE);
+    $old_table = $table;
+    $old_new_name = $new_name;
+
+    [$schema, $new_name] = $this->tableSchema($new_name);
+    [$schema, $table] = $this->tableSchema($table);
 
     // Should not use prefix because schema is not needed on rename.
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' RENAME TO ' . $this->oid($new_name, FALSE));
+    $this->connection->query('ALTER TABLE ' . $oname . ' RENAME TO ' . $this->oid($new_name, FALSE));
 
     // Rename indexes.
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
-    if ($schema) {
-      $stmt = $this->connection->query("SELECT nvl((select identifier from long_identifiers where 'L#'||to_char(id)= index_name),index_name) index_name FROM all_indexes WHERE table_name= ? and owner= ?", array(
-        $this->oid($new_name, FALSE, FALSE),
-        $schema,
-      ));
-    }
-    else {
-      $stmt = $this->connection->query("SELECT nvl((select identifier from long_identifiers where 'L#'||to_char(id)= index_name),index_name) index_name FROM user_indexes WHERE table_name= ?", array(
-        $this->oid($new_name, FALSE, FALSE),
-      ));
-    }
+    $stmt = $this->connection->query("SELECT nvl((select identifier from long_identifiers where 'L#'||to_char(id)= index_name),index_name) index_name FROM all_indexes WHERE table_name= ? and owner= ?", array(
+      $this->oid($new_name, FALSE, FALSE),
+      $schema,
+    ));
     while ($row = $stmt->fetchObject()) {
-      $this->connection->query('ALTER INDEX ' . $this->oid($row->index_name, TRUE) . ' RENAME TO ' . $this->oid(str_replace(strtoupper($table), strtoupper($new_name), $row->index_name), FALSE));
+      $this->connection->query('ALTER INDEX ' . $this->oidWithSchema($row->index_name) . ' RENAME TO ' . $this->oid(str_replace(strtoupper($table), strtoupper($new_name), $row->index_name), FALSE));
     }
 
-    $this->cleanUpSchema($table, $new_name);
+    $this->cleanUpSchema($old_table);
+    $this->cleanUpSchema($old_new_name);
   }
 
   /**
@@ -676,20 +685,14 @@ EOF;
       throw new SchemaObjectDoesNotExistException(t("Cannot set default value of field @table.@field: field doesn't exist.", ['@table' => $table, '@field' => $field]));
     }
 
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
-    if ($schema) {
-      $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
-        $this->oid($field, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $is_not_null = $this->connection->query("SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ? AND nullable = 'N'", array(
-        $this->oid($field, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $oname = $this->oid($table, TRUE);
+    [$schema, $table] = $this->tableSchema($table);
+
+    $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
+      $this->oid($field, FALSE, FALSE),
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     $on_null = '';
     if (is_null($default)) {
@@ -703,13 +706,13 @@ EOF;
       $default = is_string($default) ? $this->connection->quote($this->connection->cleanupArgValue($default)) : $default;
     }
 
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT ' . $on_null . $default . ' )');
+    $this->connection->query('ALTER TABLE ' . $oname . ' MODIFY (' . $this->oid($field) . ' DEFAULT ' . $on_null . $default . ' )');
 
     // Oracle does get confused from the NULL and removes the NOT NULL CONSTRAINT
     // so we have to bring it back.
     if ($is_not_null) {
       // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
-      $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
+      $this->connection->querySafeDdl('ALTER TABLE ' . $oname . ' MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
         '01442',
       ]);
     }
@@ -724,28 +727,21 @@ EOF;
       throw new SchemaObjectDoesNotExistException(t("Cannot remove default value of field @table.@field: field doesn't exist.", ['@table' => $table, '@field' => $field]));
     }
 
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
-    if ($schema) {
-      $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
-        $this->oid($field, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $is_not_null = $this->connection->query("SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ? AND nullable = 'N'", array(
-        $this->oid($field, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $oname = $this->oid($table, TRUE);
+    [$schema, $table] = $this->tableSchema($table);
+    $is_not_null = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ? AND nullable = 'N'", array(
+      $this->oid($field, FALSE, FALSE),
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' MODIFY (' . $this->oid($field) . ' DEFAULT NULL)');
+    $this->connection->query('ALTER TABLE ' . $oname . ' MODIFY (' . $this->oid($field) . ' DEFAULT NULL)');
 
     // Oracle does get confused from the NULL and removes the NOT NULL CONSTRAINT
     // so we have to bring it back.
     if ($is_not_null) {
       // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
-      $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
+      $this->connection->querySafeDdl('ALTER TABLE ' . $oname . ' MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
         '01442',
       ]);
     }
@@ -765,12 +761,13 @@ EOF;
    *   TRUE if the constraint exists, FALSE otherwise.
    */
   public function constraintExists($table, $prefix, $name = '') {
+    [$constraint_schema, $table] = $this->tableSchema($table);
+
     $table_name = $this->oid($table, FALSE, FALSE);
     if ($name != '') {
       $name = '_' . $name;
     }
     $constraint_name = $this->oid($prefix . '_' . $table . $name, FALSE, FALSE);
-    $constraint_schema = $this->connection->tablePrefix($table);
     return (bool) $this->connection->query("
      SELECT constraint_name
        FROM all_constraints
@@ -794,10 +791,10 @@ EOF;
     if (!$this->constraintExists($table, 'PK')) {
       return [];
     }
+    [$constraint_schema, $table] = $this->tableSchema($table);
 
     $table_name = $this->oid($table, FALSE, FALSE);
     $constraint_name = $this->oid('PK_' . $table, FALSE, FALSE);
-    $constraint_schema = $this->connection->tablePrefix($table);
     $constraint_columns = $this->connection->query('
      SELECT column_name
        FROM all_cons_columns
@@ -827,8 +824,9 @@ EOF;
       'indexes' => [],
     ];
 
+    [$constraint_schema, $table] = $this->tableSchema($table);
     $table_name = $this->oid($table, FALSE, FALSE);
-    $constraint_schema = $this->connection->tablePrefix($table);
+
     $constraint_columns = $this->connection->query('
      SELECT constraint_name, LOWER(column_name) AS column_name
        FROM all_cons_columns
@@ -878,7 +876,10 @@ EOF;
       throw new SchemaObjectExistsException(t('Cannot add primary key to table @table: primary key already exists.', ['@table' => $table]));
     }
 
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' ADD CONSTRAINT ' . $this->oid('PK_' . $table) . ' PRIMARY KEY (' . $this->createColsSql($fields) . ')');
+    $oname = $this->oid($table, TRUE);
+    [$schema, $table] = $this->tableSchema($table);
+
+    $this->connection->query('ALTER TABLE ' . $oname  . ' ADD CONSTRAINT ' . $this->oid('PK_' . $table) . ' PRIMARY KEY (' . $this->createColsSql($fields) . ')');
   }
 
   /**
@@ -888,8 +889,10 @@ EOF;
     if (!$this->constraintExists($table, 'PK')) {
       return FALSE;
     }
+    $oname = $this->oid($table, TRUE);
+    [$schema, $table] = $this->tableSchema($table);
 
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' DROP CONSTRAINT ' . $this->oid('PK_' . $table));
+    $this->connection->query('ALTER TABLE ' . $oname . ' DROP CONSTRAINT ' . $this->oid('PK_' . $table));
     return TRUE;
   }
 
@@ -914,8 +917,10 @@ EOF;
     if (!$this->constraintExists($table, 'UK', $name)) {
       return FALSE;
     }
+    $oname = $this->oid($table, TRUE);
+    [$schema, $table] = $this->tableSchema($table);
 
-    $this->connection->query('ALTER TABLE ' . $this->oid($table, TRUE) . ' DROP CONSTRAINT ' . $this->oid('UK_' . $table . '_' . $name));
+    $this->connection->query('ALTER TABLE ' . $oname . ' DROP CONSTRAINT ' . $this->oid('UK_' . $table . '_' . $name));
     return TRUE;
   }
 
@@ -944,7 +949,7 @@ EOF;
       return FALSE;
     }
 
-    $this->connection->query('DROP INDEX ' . $this->oid('IDX_' . $table . '_' . $name, TRUE));
+    $this->connection->query('DROP INDEX ' . $this->oidWithSchema('IDX_' . $table . '_' . $name));
     return TRUE;
   }
 
@@ -952,22 +957,14 @@ EOF;
    * {@inheritdoc}
    */
   public function indexExists($table, $name) {
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    [$schema, $table] = $this->tableSchema($table);
 
     $oname = $this->oid('IDX_' . $table . '_' . $name, FALSE, FALSE);
 
-    if ($schema) {
-      $retval = $this->connection->query("SELECT 1 FROM all_indexes WHERE index_name = ? and table_name= ? and owner= ?", array(
-        $oname, $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $retval = $this->connection->query("SELECT 1 FROM user_indexes WHERE index_name = ? and table_name= ?", array(
-        $oname,
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $retval = $this->connection->query("SELECT 1 FROM all_indexes WHERE index_name = ? and table_name= ? and owner= ?", array(
+      $oname, $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     if ($retval) {
       return TRUE;
@@ -981,51 +978,32 @@ EOF;
    * Retrieve a table or column comment.
    */
   public function getComment($table, $column = NULL) {
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    [$schema, $table] = $this->tableSchema($table);
 
-    if ($schema) {
-      if (isset($column)) {
-        return $this->connection->query('select comments from all_col_comments where column_name = ? and table_name = ? and owner = ?', array(
-          $this->oid($column, FALSE, FALSE),
-          $this->oid($table, FALSE, FALSE),
-          $schema,
-        ))->fetchField();
-      }
-      return $this->connection->query('select comments from all_tab_comments where table_name = ? and owner = ?', array(
+    if (isset($column)) {
+      return $this->connection->query('select comments from all_col_comments where column_name = ? and table_name = ? and owner = ?', array(
+        $this->oid($column, FALSE, FALSE),
         $this->oid($table, FALSE, FALSE),
         $schema,
       ))->fetchField();
     }
-    else {
-      if (isset($column)) {
-        return $this->connection->query('select comments from user_col_comments where column_name = ? and table_name = ?', array(
-          $this->oid($column, FALSE, FALSE),
-          $this->oid($table, FALSE, FALSE),
-        ))->fetchField();
-      }
-      return $this->connection->query('select comments from user_tab_comments where table_name = ?', array(
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+
+    return $this->connection->query('select comments from all_tab_comments where table_name = ? and owner = ?', array(
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
   }
 
   /**
    * {@inheritdoc}
    */
   public function tableExists($table) {
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    [$schema, $table] = $this->tableSchema($table);
 
-    if ($schema) {
-      $retval = $this->connection->query("SELECT 1 FROM all_tables WHERE temporary= 'N' and table_name = ? and owner= ?", array(
-        $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $retval = $this->connection->query("SELECT 1 FROM user_tables WHERE temporary= 'N' and table_name = ?", array(
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $retval = $this->connection->query("SELECT 1 FROM all_tables WHERE temporary= 'N' and table_name = ? and owner= ?", array(
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     if ($retval) {
       return TRUE;
@@ -1039,21 +1017,13 @@ EOF;
    * {@inheritdoc}
    */
   public function fieldExists($table, $column) {
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    [$schema, $table] = $this->tableSchema($table);
 
-    if ($schema) {
-      $retval = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ?", array(
-        $this->oid($column, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-        $schema,
-      ))->fetchField();
-    }
-    else {
-      $retval = $this->connection->query('SELECT 1 FROM user_tab_columns WHERE column_name= ? and table_name = ?', array(
-        $this->oid($column, FALSE, FALSE),
-        $this->oid($table, FALSE, FALSE),
-      ))->fetchField();
-    }
+    $retval = $this->connection->query("SELECT 1 FROM all_tab_columns WHERE column_name = ? and table_name = ? and owner= ?", array(
+      $this->oid($column, FALSE, FALSE),
+      $this->oid($table, FALSE, FALSE),
+      $schema,
+    ))->fetchField();
 
     if ($retval) {
       return TRUE;
@@ -1065,54 +1035,59 @@ EOF;
    * {@inheritdoc}
    */
   public function findTables($table_expression) {
-    $individually_prefixed_tables = $this->connection->getUnprefixedTablesMap();
-    $default_prefix = $this->connection->tablePrefix();
-    $expression_prefix = $this->tableSchema($table_expression);
-    $tables = [];
-
     // Load all the tables up front in order to take into account per-table
     // prefixes. The actual matching is done at the bottom of the method.
-    // Don't use {} around `all_tables` table.
-    $all_tables = $this->connection->query('SELECT owner, LOWER(table_name) as table_name FROM all_tables')->fetchAll();
-    foreach ($all_tables as $table) {
-      $table->table_name_prefixed = $this->oid($table->owner) . '.' . $this->oid($table->table_name);
+    $individually_prefixed_tables = $this->connection->getUnprefixedTablesMap();
+    $default_prefix = $this->connection->tablePrefix();
+    $default_prefix_length = strlen($default_prefix);
+    $tables = [];
 
-      // Ignore all tables according to the prefix in the search expression.
-      if ($expression_prefix && $table->owner !== $expression_prefix) {
-        continue;
-      }
-
-      // Take into account tables that have an individual prefix.
-      if (isset($individually_prefixed_tables[$table->table_name_prefixed]) &&
-        $table->table_name === $individually_prefixed_tables[$table->table_name_prefixed]) {
-        $tables[$table->table_name] = $table->table_name;
-      }
-
-      // This table name does not start the default prefix, which means that
-      // it is not managed by Drupal so it should be excluded from the result.
-      elseif ($default_prefix && $table->owner !== $default_prefix) {
-        continue;
-      }
-
-      // Ignore all internal tables needed to operate of this driver.
-      elseif (in_array($table->table_name, $this->driverTables, TRUE)) {
-        continue;
-      }
-
-      $tables[$table->table_name] = $table->table_name;
+    // This is only minimally changed from core's findTables.
+    // --> ALTERED LINES
+    if (strpos($default_prefix, '.') !== FALSE) {
+      $default_prefix = '';
+      $default_prefix_length = 0;
     }
 
-    // @todo: simpletest data truncating - add "only prefix" for user deletion.
-    // @see EnvironmentCleaner::doCleanDatabase().
-    // if ($table_expression === 'TEST%') {
-    //   $all_tables = $this->connection->query("SELECT t.username FROM DBA_USERS t WHERE t.username LIKE 'TEST%'");
-    // }
+    [$schema,] = $this->tableSchema($table_expression);
+    $results = $this->connection->query('SELECT table_name as table_name FROM all_tables WHERE owner = ?', [$schema])->fetchAll();
+    // --> ALTERED LINES END
+
+    foreach ($results as $table) {
+      // Take into account tables that have an individual prefix.
+      if (isset($individually_prefixed_tables[$table->table_name])) {
+        $prefix_length = strlen($this->connection->tablePrefix($individually_prefixed_tables[$table->table_name]));
+      }
+      elseif ($default_prefix && substr($table->table_name, 0, $default_prefix_length) !== $default_prefix) {
+        // This table name does not start the default prefix, which means that
+        // it is not managed by Drupal so it should be excluded from the result.
+        continue;
+      }
+      else {
+        $prefix_length = $default_prefix_length;
+      }
+
+      // Remove the prefix from the returned tables.
+      $unprefixed_table_name = substr($table->table_name, $prefix_length);
+
+      // --> ADDED: strtolower to make compatible with core.
+      $unprefixed_table_name = strtolower($unprefixed_table_name);
+
+      // The pattern can match a table which is the same as the prefix. That
+      // will become an empty string when we remove the prefix, which will
+      // probably surprise the caller, besides not being a prefixed table. So
+      // remove it.
+      if (!empty($unprefixed_table_name)) {
+        $tables[$unprefixed_table_name] = $unprefixed_table_name;
+      }
+    }
 
     // Convert the table expression from its SQL LIKE syntax to a regular
     // expression and escape the delimiter that will be used for matching.
     $table_expression = str_replace(['%', '_'], ['.*?', '.'], preg_quote($table_expression, '/'));
     $tables = preg_grep('/^' . $table_expression . '$/i', $tables);
-    return array_map('strtolower', $tables);
+
+    return $tables;
   }
 
   /**
@@ -1149,7 +1124,8 @@ EOF;
    * Oracle schema helper.
    */
   protected function createIndexSql($table, $name, $fields) {
-    $oname = $this->oid('IDX_' . $table . '_' . $name, TRUE);
+    [$schema, $table_name] = $this->tableSchema($table);
+    $oname = $this->oidWithSchema('IDX_' . $table_name . '_' . $name);
 
     $sql = array();
     // Oracle doesn't like multiple indexes on the same column list.
@@ -1172,7 +1148,7 @@ EOF;
    * Oracle schema helper.
    */
   public function dropIndexByColsSql($table, $fields) {
-    $schema = $this->tableSchema($this->connection->prefixTables('{' . $table . '}'));
+    [$schema, $table] = $this->tableSchema($table);
     $stmt = $this->connection->queryOracle(
       "select i.index_name,
        e.column_expression exp,
@@ -1256,25 +1232,37 @@ EOF;
   }
 
   /**
-   * Oracle schema helper.
+   * Helper to return [schema,name] for unprefixed table name.
+   *
+   * @param string $table_name
+   *   The name of the table to get a full schema for.
+   *
+   * @return array
+   *   An array with the schema and the table name.
    */
-  public static function tableSchema($table) {
-    $exp = explode('.', $table);
+  public function tableSchema($table_name) {
+    static $owner;
 
+    $table = strtoupper(str_replace('"', '', $this->connection->prefixTables('{' . $table_name . '}')));
+
+    $exp = explode('.', $table, 2);
     if (count($exp) > 1) {
-      return strtoupper(str_replace('"', '', $exp[0]));
+      return $exp;
     }
-    return FALSE;
+
+    if (!isset($owner)) {
+      $owner = $this->connection
+        ->queryOracle('SELECT USER FROM dual')
+        ->fetchField();
+    }
+
+    return [$owner, $exp[0]];
   }
 
   /**
    * Oracle schema helper.
    */
-  private function cleanUpSchema($cache_table, $trigger_table = '') {
-    if (!$trigger_table) {
-      $trigger_table = $cache_table;
-    }
-
+  private function cleanUpSchema($cache_table) {
     $this->resetLongIdentifiers();
     $this->resetTableInformation($cache_table);
   }

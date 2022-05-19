@@ -210,23 +210,19 @@ class Connection extends DatabaseConnection {
 
     // Ensure all used Oracle prefixes (users schemas) exists.
     foreach ($this->prefixes as $table_name => $prefix) {
-      if (!empty($prefix)) {
+      if (!empty($prefix) && strpos($prefix, '.') !== FALSE) {
+        $prefix = str_replace(['"', '.'],['',''], $prefix);
+
         // This will create the user if not exists.
         // @todo: clean up Simpletest TEST% users.
 
         // Allow ORA-00904 ("invalid identifier error") and ORA-06575 ("package
         // or function is in an invalid state") and during the installation
         // process (before the 'identifier' package were created).
-        $this->prefixes[$table_name] = $this
+        $this
           ->query('SELECT identifier.check_db_prefix(?) FROM dual', [$prefix], [
             'oracle_exceptions_allowed' => ['06575', '00904'],
             ]);
-        if ($this->prefixes[$table_name]) {
-          $this->prefixes[$table_name] = $this->prefixes[$table_name]->fetchField();
-        }
-        else {
-          $this->prefixes[$table_name] = 'C##' . strtoupper($prefix);
-        }
       }
     }
   }
@@ -286,56 +282,26 @@ class Connection extends DatabaseConnection {
    * {@inheritdoc}
    */
   protected function setPrefix($prefix) {
-    if (is_array($prefix)) {
-      $this->prefixes = $prefix + ['default' => ''];
-    }
-    else {
-      $this->prefixes = ['default' => strtoupper($prefix)];
+    if (!is_array($prefix)) {
+      $prefix = ['default' => $prefix];
     }
 
-    $prefixes = $this->prefixes;
-    // Ensure prefixes are prefixed with the 'C##'.
-    foreach ($prefixes as $table_name => $prefix) {
-      if (!empty($prefix)) {
-        $prefixes[$table_name] = 'C##' . strtoupper($prefix);
+    if (getenv("ORACLE_RUN_TESTS_IN_EXTRA_DB")) {
+      foreach ($prefix as $key => $value) {
+        $prefix[$key] = 'C##' . $prefix[$key] . '.';
       }
     }
 
-    // Set up variables for use in prefixTables(). Replace table-specific
-    // prefixes first.
-    $this->prefixSearch = [];
-    $this->prefixReplace = [];
-    foreach ($prefixes as $table_name => $prefix) {
-      if ($table_name !== 'default') {
+    foreach ($prefix as $key => $value) {
+      $prefix[$key] = strtoupper($prefix[$key]);
 
-        // Set up a map of prefixed => un-prefixed tables.
-        $prefixed = $this->schema()->oid($prefix) . '.' . $this->schema()->oid($table_name);
-        $this->unprefixedTablesMap[$prefixed] = $table_name;
-
-        // Add replacements.
-        $this->prefixSearch[] = '{' . $table_name . '}';
-        $this->prefixReplace[] = $prefixed;
+      // Ensure database. as prefix is supported.
+      if (strpos($prefix[$key], '.') !== FALSE) {
+        $prefix[$key] = str_replace('.', '"."', str_replace('"', '', $prefix[$key]));
       }
     }
 
-    // Ensure we do not have double quoted tables.
-    $this->prefixSearch[] = '"{';
-    $this->prefixSearch[] = '}"';
-    $this->prefixSearch[] = '{';
-    $this->prefixSearch[] = '}';
-
-    if ($prefixes['default']) {
-      $this->prefixReplace[] = '{';
-      $this->prefixReplace[] = '}';
-      $this->prefixReplace[] = $this->schema()->oid($prefixes['default']) . '."';
-      $this->prefixReplace[] = '"';
-    }
-    else {
-      $this->prefixReplace[] = '{';
-      $this->prefixReplace[] = '}';
-      $this->prefixReplace[] = '"';
-      $this->prefixReplace[] = '"';
-    }
+    return parent::setPrefix($prefix);
   }
 
   /**
@@ -582,7 +548,7 @@ class Connection extends DatabaseConnection {
    */
   public function getFullQualifiedTableName($table) {
     $options = $this->getConnectionOptions();
-    $prefix = $this->tablePrefix($table);
+    [$schema, $table] = $this->schema()->tableSchema($table);
 
     // The fully qualified table name in Oracle Database is in the form of:
     // <user_name>.<table_name>@<database>. Where <database> is either
@@ -590,7 +556,7 @@ class Connection extends DatabaseConnection {
     // Local Naming Parameters configuration (by default is located in the
     // $ORACLE_HOME/network/admin/tnsnames.ora). This Driver DO NOT support
     // auto creation of database links for the connection.
-    return str_replace('C##', ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, $prefix) . '.' . strtoupper($table) . '@' . $options['database'];
+    return str_replace('C##', ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, $schema) . '.' . strtoupper($table) . '@' . $options['database'];
   }
 
   /**
