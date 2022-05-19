@@ -1,4 +1,5 @@
 create or replace function setup_session
+  RETURN NUMBER IS
 begin
 
     -- force cursor sharing to prevent unfair modules (read more on cursor_sharing http://www.oracle.com/technology/oramag/oracle/06-jan/o16asktom.html)
@@ -20,4 +21,5 @@ begin
     --execute immediate 'ALTER SESSION SET NLS_COMP=LINGUISTIC';
     --execute immediate 'ALTER SESSION SET NLS_SORT=BINARY_CI';
 
+    return(1);
 end;

@@ -34,11 +34,6 @@ define('ORACLE_LONG_IDENTIFIER_PREFIX', 'L#');
 define('ORACLE_MAX_VARCHAR2_LENGTH', 4000);
 
 /**
- * Alias used for queryRange filtering (we have to remove that from resultsets).
- */
-define('ORACLE_ROWNUM_ALIAS', 'RWN_TO_REMOVE');
-
-/**
  * Placeholder used to ensure the C## survives.
  */
 define('ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER', 'C__ORACLE_DRIVER_FULL_QUALIFIED_TABLE_NAME');
@@ -199,13 +194,18 @@ class Connection extends DatabaseConnection {
 
     // Setup session attributes.
     try {
-      $stmt = parent::prepare("begin setup_session; end;");
+      $stmt = $this->prepareQuery("SELECT setup_session() FROM dual");
       $stmt->execute();
     }
     catch (\Exception $ex) {
       // Connected to an external oracle database (not necessarily a drupal
       // schema).
       $this->external = TRUE;
+    }
+
+    // Execute Oracle init_commands.
+    if (isset($connection_options['init_commands'])) {
+      $this->connection->exec(implode('; ', $connection_options['init_commands']));
     }
 
     // Ensure all used Oracle prefixes (users schemas) exists.
@@ -589,18 +589,18 @@ class Connection extends DatabaseConnection {
   }
 
   /**
-   * Help method to check if array is associative.
-   */
-  public static function isAssoc($array) {
-    return (is_array($array) && 0 !== count(array_diff_key($array, array_keys(array_keys($array)))));
-  }
-
-  /**
    * Oracle connection helper.
    */
   public function makePrimary() {
     // We are installing a primary database.
     $this->external = FALSE;
+  }
+
+ /**
+   * Oracle connection helper.
+   */
+  public function isPrimary() {
+    return !$this->external;
   }
 
   /**
@@ -991,21 +991,15 @@ class Connection extends DatabaseConnection {
       return $args;
     }
 
-    $ret = array();
-    if (Connection::isAssoc($args)) {
-      foreach ($args as $key => $value) {
-        $key = Connection::escapeReserved($key);
-
+    $ret = [];
+    foreach ($args as $key => $value) {
+      if (is_string($key)) {
         // Bind variables cannot have reserved names.
+        $key = Connection::escapeReserved($key);
         $key = $this->getLongIdentifiersHandler()->escapeLongIdentifiers($key);
-        $ret[$key] = $this->cleanupArgValue($value);
       }
-    }
-    else {
-      // Indexed array.
-      foreach ($args as $key => $value) {
-        $ret[$key] = $this->cleanupArgValue($value);
-      }
+
+      $ret[$key] = $this->cleanupArgValue($value);
     }
 
     return $ret;
@@ -1088,11 +1082,8 @@ class Connection extends DatabaseConnection {
 
     if (is_array($f)) {
       foreach ($f as $key => $value) {
-        if ((string) $key == strtolower(ORACLE_ROWNUM_ALIAS)) {
-          unset($f[$key]);
-        }
         // Long identifier.
-        elseif (Connection::isLongIdentifier($key)) {
+        if (Connection::isLongIdentifier($key)) {
           $f[$this->getLongIdentifiersHandler()->longIdentifierKey($key)] = $this->cleanupFetched($value);
           unset($f[$key]);
         }
@@ -1103,11 +1094,8 @@ class Connection extends DatabaseConnection {
     }
     elseif (is_object($f)) {
       foreach ($f as $key => $value) {
-        if ((string) $key == strtolower(ORACLE_ROWNUM_ALIAS)) {
-          unset($f->{$key});
-        }
         // Long identifier.
-        elseif (Connection::isLongIdentifier($key)) {
+        if (Connection::isLongIdentifier($key)) {
           $f->{$this->getLongIdentifiersHandler()->longIdentifierKey($key)} = $this->cleanupFetched($value);
           unset($f->{$key});
         }
