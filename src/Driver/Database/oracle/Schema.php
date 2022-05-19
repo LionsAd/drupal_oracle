@@ -1100,54 +1100,59 @@ EOF;
    * {@inheritdoc}
    */
   public function findTables($table_expression) {
-    $individually_prefixed_tables = $this->connection->getUnprefixedTablesMap();
-    $default_prefix = $this->connection->tablePrefix();
-    $expression_prefix = $this->tableSchema($table_expression);
-    $tables = [];
-
     // Load all the tables up front in order to take into account per-table
     // prefixes. The actual matching is done at the bottom of the method.
-    // Don't use {} around `all_tables` table.
-    $all_tables = $this->connection->query('SELECT owner, LOWER(table_name) as table_name FROM all_tables')->fetchAll();
-    foreach ($all_tables as $table) {
-      $table->table_name_prefixed = $this->oid($table->owner) . '.' . $this->oid($table->table_name);
+    $individually_prefixed_tables = $this->connection->getUnprefixedTablesMap();
+    $default_prefix = $this->connection->tablePrefix();
+    $default_prefix_length = strlen($default_prefix);
+    $tables = [];
 
-      // Ignore all tables according to the prefix in the search expression.
-      if ($expression_prefix && $table->owner !== $expression_prefix) {
-        continue;
-      }
-
-      // Take into account tables that have an individual prefix.
-      if (isset($individually_prefixed_tables[$table->table_name_prefixed]) &&
-        $table->table_name === $individually_prefixed_tables[$table->table_name_prefixed]) {
-        $tables[$table->table_name] = $table->table_name;
-      }
-
-      // This table name does not start the default prefix, which means that
-      // it is not managed by Drupal so it should be excluded from the result.
-      elseif ($default_prefix && $table->owner !== $default_prefix) {
-        continue;
-      }
-
-      // Ignore all internal tables needed to operate of this driver.
-      elseif (in_array($table->table_name, $this->driverTables, TRUE)) {
-        continue;
-      }
-
-      $tables[$table->table_name] = $table->table_name;
+    // This is only minimally changed from core's findTables.
+    // --> ALTERED LINES
+    if (strpos($default_prefix, '.') !== FALSE) {
+      $default_prefix = '';
+      $default_prefix_length = 0;
     }
 
-    // @todo: simpletest data truncating - add "only prefix" for user deletion.
-    // @see EnvironmentCleaner::doCleanDatabase().
-    // if ($table_expression === 'TEST%') {
-    //   $all_tables = $this->connection->query("SELECT t.username FROM DBA_USERS t WHERE t.username LIKE 'TEST%'");
-    // }
+    [$schema,] = $this->tableSchema($table_expression);
+    $results = $this->connection->query('SELECT table_name as table_name FROM all_tables WHERE owner = ?', [$schema])->fetchAll();
+    // --> ALTERED LINES END
+
+    foreach ($results as $table) {
+      // Take into account tables that have an individual prefix.
+      if (isset($individually_prefixed_tables[$table->table_name])) {
+        $prefix_length = strlen($this->connection->tablePrefix($individually_prefixed_tables[$table->table_name]));
+      }
+      elseif ($default_prefix && substr($table->table_name, 0, $default_prefix_length) !== $default_prefix) {
+        // This table name does not start the default prefix, which means that
+        // it is not managed by Drupal so it should be excluded from the result.
+        continue;
+      }
+      else {
+        $prefix_length = $default_prefix_length;
+      }
+
+      // Remove the prefix from the returned tables.
+      $unprefixed_table_name = substr($table->table_name, $prefix_length);
+
+      // --> ADDED: strtolower to make compatible with core.
+      $unprefixed_table_name = strtolower($unprefixed_table_name);
+
+      // The pattern can match a table which is the same as the prefix. That
+      // will become an empty string when we remove the prefix, which will
+      // probably surprise the caller, besides not being a prefixed table. So
+      // remove it.
+      if (!empty($unprefixed_table_name)) {
+        $tables[$unprefixed_table_name] = $unprefixed_table_name;
+      }
+    }
 
     // Convert the table expression from its SQL LIKE syntax to a regular
     // expression and escape the delimiter that will be used for matching.
     $table_expression = str_replace(['%', '_'], ['.*?', '.'], preg_quote($table_expression, '/'));
     $tables = preg_grep('/^' . $table_expression . '$/i', $tables);
-    return array_map('strtolower', $tables);
+
+    return $tables;
   }
 
   /**
