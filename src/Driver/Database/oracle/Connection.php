@@ -753,11 +753,19 @@ class Connection extends DatabaseConnection {
     }
     $ddl = !((boolean) preg_match('/^(select|insert|update|delete)/i', $query));
 
-    // Escapes all table names.
+    // Uppercases all table names.
     $query = preg_replace_callback(
       '/({)(\w+)(})/',
       function ($matches) {
-        return '"{' . strtoupper($matches[2]) . '}"';
+        return '{' . strtoupper($matches[2]) . '}';
+      },
+      $query);
+
+    // Uppercases all identifiers.
+    $query = preg_replace_callback(
+      '/(")(\w+)(")/',
+      function ($matches) {
+        return '"' . strtoupper($matches[2]) . '"';
       },
       $query);
 
