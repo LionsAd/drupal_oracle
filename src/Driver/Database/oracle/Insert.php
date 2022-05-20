@@ -46,8 +46,6 @@ class Insert extends QueryInsert {
         $value = $this->connection->cleanupArgValue($value);
         $stmt->getClientStatement()->bindParam($key, $value);
       }
-      // The SelectQuery may contain arguments, load and pass them through.
-      return $this->connection->query($stmt, array(), $this->queryOptions);
     }
 
     $last_insert_id = 0;
@@ -55,7 +53,7 @@ class Insert extends QueryInsert {
 
     try {
       if (empty($this->insertValues)) {
-        if (!empty($this->defaultFields)) {
+        if (!empty($this->defaultFields) || !empty($this->fromQuery)) {
           $stmt->execute(NULL, $this->queryOptions);
         }
 
