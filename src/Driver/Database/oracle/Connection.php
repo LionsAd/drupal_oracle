@@ -762,12 +762,19 @@ class Connection extends DatabaseConnection {
       $query);
 
     // Uppercases all identifiers.
-    $query = preg_replace_callback(
-      '/(")(\w+)(")/',
-      function ($matches) {
-        return '"' . strtoupper($matches[2]) . '"';
-      },
-      $query);
+    $t = explode("'", $query);
+    for ($i = 0; $i < count($t); $i++) {
+      if ($i % 2 == 1) {
+        continue;
+      }
+      $t[$i] = preg_replace_callback(
+        '/(")(\w+)(")/',
+        function ($matches) {
+          return '"' . strtoupper($matches[2]) . '"';
+        },
+        $t[$i]);
+    }
+    $query = implode("'", $t);
 
     // Escapes long id.
     $query = preg_replace_callback(
