@@ -55,6 +55,10 @@ class Insert extends QueryInsert {
 
     try {
       if (empty($this->insertValues)) {
+        if (!empty($this->defaultFields)) {
+          $stmt->execute(NULL, $this->queryOptions);
+        }
+
         $last_insert_id = $sequence_name ? $this->connection->lastInsertId($sequence_name) : 0;
       }
       else {
