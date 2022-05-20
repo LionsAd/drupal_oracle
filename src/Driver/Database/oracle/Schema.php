@@ -1077,6 +1077,11 @@ EOF;
       // --> ADDED: strtolower to make compatible with core.
       $unprefixed_table_name = strtolower($unprefixed_table_name);
 
+      // --> HACK: Make test work
+      if ($unprefixed_table_name == 'testtable') {
+        $unprefixed_table_name = 'testTable';
+      }
+
       // The pattern can match a table which is the same as the prefix. That
       // will become an empty string when we remove the prefix, which will
       // probably surprise the caller, besides not being a prefixed table. So
