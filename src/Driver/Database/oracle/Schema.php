@@ -662,6 +662,10 @@ EOF;
     if (isset($field['oracle_type'])) {
       $field['oracle_type'] = strtoupper($field['oracle_type']);
     }
+    // HACK: Core wants a BLOB field for translation source, but wants to query on it via IN.
+    elseif (isset($field['mysql_type']) && $field['mysql_type'] == 'blob' && $field['type'] == 'text') {
+      $field['oracle_type'] = 'VARCHAR2';
+    }
     elseif (!isset($field['type']) && isset($field['pgsql_type'])) {
       $field['oracle_type'] = $map[$field['pgsql_type'] . ':' . $field['size']];
     }
