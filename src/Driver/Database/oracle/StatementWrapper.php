@@ -22,6 +22,45 @@ class StatementWrapper extends DatabaseStatementWrapper {
   /**
    * {@inheritdoc}
    */
+  public function getClientStatement() {
+    return $this;
+  }
+
+    /**
+   * Implements the magic __get() method.
+   *
+   * @todo Remove the method before Drupal 10.
+   * @see https://www.drupal.org/i/3210310
+   */
+  public function __get($name) {
+    if ($name === 'queryString') {
+      @trigger_error("StatementWrapper::\$queryString should not be accessed in drupal:9.1.0 and will error in drupal:10.0.0. Access the client-level statement object via ::getClientStatement(). See https://www.drupal.org/node/3177488", E_USER_DEPRECATED);
+      return $this->clientStatement->queryString;
+    }
+
+    return parent::__get($name);
+  }
+
+  /**
+   * Implements the magic __call() method.
+   *
+   * @deprecated in drupal:9.1.0 and is removed from drupal:10.0.0. Access the
+   *   client-level statement object via ::getClientStatement().
+   *
+   * @see https://www.drupal.org/node/3177488
+   */
+  public function __call($method, $arguments) {
+    if (is_callable([$this->clientStatement, $method])) {
+      @trigger_error("StatementWrapper::{$method} should not be called in drupal:9.1.0 and will error in drupal:10.0.0. Access the client-level statement object via ::getClientStatement(). See https://www.drupal.org/node/3177488", E_USER_DEPRECATED);
+      return call_user_func_array([$this->clientStatement, $method], $arguments);
+    }
+
+    throw new \BadMethodCallException($method);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function bindParam($parameter, &$variable, $data_type = \PDO::PARAM_STR, $max_length = -1, $driver_options = null) : bool {
     // Cleanup parameter and values.
     $args = [$parameter => $variable];
