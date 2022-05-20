@@ -226,10 +226,7 @@ class Connection extends DatabaseConnection {
         // Allow ORA-00904 ("invalid identifier error") and ORA-06575 ("package
         // or function is in an invalid state") and during the installation
         // process (before the 'identifier' package were created).
-        $this
-          ->query('SELECT identifier.check_db_prefix(?) FROM dual', [$prefix], [
-            'oracle_exceptions_allowed' => ['06575', '00904'],
-            ]);
+        $this->querySafeDdl('SELECT identifier.check_db_prefix(?) FROM dual', [$prefix], ['06575', '00904']);
       }
     }
   }
@@ -394,8 +391,6 @@ class Connection extends DatabaseConnection {
    *   FALSE if the error occurs, TRUE if not.
    *
    * @throws \Drupal\Core\Database\DatabaseExceptionWrapper
-   *
-   * @deprecated use query() with oracle_exceptions_allowed option instead.
    */
   public function querySafeDdl($query, $args = [], $allowed = []) {
     try {
