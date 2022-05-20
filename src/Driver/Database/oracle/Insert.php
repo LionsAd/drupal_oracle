@@ -67,9 +67,14 @@ class Insert extends QueryInsert {
           $blobs = [];
           $blob_count = 0;
           foreach ($this->insertFields as $idx => $field) {
+            $has_value = TRUE;
+            if (count($this->insertValues) == 1) {
+              $has_value = $insert_values[$idx] !== NULL;
+            }
+
             $insert_values[$idx] = $this->connection->cleanupArgValue($insert_values[$idx]);
 
-            if (isset($table_information->blob_fields[strtoupper($field)])) {
+            if (isset($table_information->blob_fields[strtoupper($field)]) && $has_value) {
               $blobs[$blob_count] = fopen('php://memory', 'a');
               fwrite($blobs[$blob_count], $insert_values[$idx]);
               rewind($blobs[$blob_count]);
@@ -137,7 +142,12 @@ class Insert extends QueryInsert {
       $placeholders = array_pad($placeholders, count($this->defaultFields), 'default');
       $i = 0;
       foreach ($this->insertFields as $idx => $field) {
-        if (isset($table_information->blob_fields[strtoupper($field)])) {
+        $has_value = TRUE;
+        if (count($this->insertValues) == 1) {
+          $has_value = $this->insertValues[0][$idx] !== NULL;
+        }
+
+        if (isset($table_information->blob_fields[strtoupper($field)]) && $has_value) {
           $blobs[$this->connection->escapeField($field)] = ':db_insert_placeholder_' . $i++;
           $placeholders[] = 'EMPTY_BLOB()';
         }
