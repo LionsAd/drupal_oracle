@@ -34,17 +34,16 @@ class ExceptionHandler extends BaseExceptionHandler {
       // Wrap the exception in another exception, because PHP does not allow
       // overriding Exception::getMessage(). Its message is the extra database
       // debug information.
-      $code = is_int($exception->getCode()) ? $exception->getCode() : 0;
-      $oracleCode = (int) ($exception->errorInfo[1] ?? NULL);
+      $code = (int) ($exception->errorInfo[1] ?? NULL);
       $message = $exception->getMessage() . ": " . $statement->getQueryString() . "; " . print_r($arguments, TRUE);
 
       // The old driver had 'errorInfo[1] == "1" -> errorInfo[0] = 23000',
       // which is an IntegrityConstraintViolationException().
-      if (in_array($oracleCode, [1,1400])) {
+      if (in_array($code, [1,1400])) {
         throw new IntegrityConstraintViolationException($message, $code, $exception);
       }
 
-      throw new DatabaseExceptionWrapper($message, 0, $exception);
+      throw new DatabaseExceptionWrapper($message, $code, $exception);
     }
 
     throw $exception;
