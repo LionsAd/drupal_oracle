@@ -664,8 +664,6 @@ class Connection extends DatabaseConnection {
     $query = $this->escapeIfFunction($query);
 
     $options['allow_square_brackets'] = TRUE;
-    // @todo Make more secure once queries are fixed to use oracleQuery().
-    $options['allow_delimiter_in_query'] = TRUE;
     return parent::prepareStatement($query, $options, $allow_row_count);
   }
 
