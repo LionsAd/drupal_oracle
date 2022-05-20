@@ -686,7 +686,7 @@ class Connection extends DatabaseConnection {
     $replace = [
       "BITAND(\\1,\\2) = \\3",
       "BITAND(\\1,\\2) <> \\3",
-      'begin null; end;',
+      'SELECT \'RELEASE SAVEPOINT \\1\' FROM DUAL',
       "NOT REGEXP_LIKE(\\1, \\2)",
       "REGEXP_LIKE(\\1, \\2)",
     ];
