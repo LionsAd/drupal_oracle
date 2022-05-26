@@ -119,6 +119,9 @@ class Insert extends QueryInsert {
       return $this->connection->escapeField($f);
     }, $insert_fields);
 
+
+    // If we're selecting from a SelectQuery, finish building the query and
+    // pass it back, as any remaining options are irrelevant.
     if (!empty($this->fromQuery)) {
       $cols = implode(', ', $insert_fields);
       if (!empty($cols)) {
