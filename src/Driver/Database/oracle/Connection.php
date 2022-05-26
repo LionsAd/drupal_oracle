@@ -706,6 +706,10 @@ class Connection extends DatabaseConnection {
    * Oracle connection helper.
    */
   private function escapeEmptyLiterals($query) {
+    if (strpos($query, 'DEFAULT ') !== FALSE) {
+      return $query;
+    }
+
     if (is_object($query)) {
       $query = $query->getQueryString();
     }
