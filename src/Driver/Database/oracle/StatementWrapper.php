@@ -85,7 +85,10 @@ class StatementWrapper extends DatabaseStatementWrapper {
       $max_length = strlen((string) $variable);
     }
 
-    return $this->clientStatement->bindParam($parameter, $variable, $data_type, $max_length, $driver_options);
+    $this->clientStatement->bindParam($parameter, $variable, $data_type, $max_length, $driver_options);
+
+    // @todo Oracle driver's PDO Statement does always return FALSE.
+    return TRUE;
   }
 
   /**
