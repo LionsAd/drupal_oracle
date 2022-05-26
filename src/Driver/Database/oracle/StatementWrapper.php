@@ -67,6 +67,10 @@ class StatementWrapper extends DatabaseStatementWrapper {
    * {@inheritdoc}
    */
   public function bindParam($parameter, &$variable, $data_type = \PDO::PARAM_STR, $max_length = -1, $driver_options = null) : bool {
+    if ($parameter === ':name' && $variable === NULL) {
+      @trigger_error("StatementWrapper::bindParam should not be called in drupal:9.1.0 and will error in drupal:10.0.0. Access the client-level statement object via ::getClientStatement(). See https://www.drupal.org/node/3177488", E_USER_DEPRECATED);
+    }
+
     // Cleanup parameter and values.
     $args = [$parameter => $variable];
     $args = $this->connection->cleanupArgs($args);
