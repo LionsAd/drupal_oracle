@@ -156,14 +156,9 @@ EOF;
    *   The non-prefixed name of the table.
    */
   protected function getTableInformationKey($table) {
-    $key = $this->connection->prefixTables('{' . $table . '}');
-    if (strpos($key, '.') === FALSE) {
-      // @TODO Find current owner
-      $key = 'public.' . $key;
-    }
-    $key = strtoupper(str_replace('"', '', $key));
+    [$schema, $table_name] = $this->tableSchema($table);
 
-    return $key;
+    return $schema . '.' . $table_name;
   }
 
   /**
