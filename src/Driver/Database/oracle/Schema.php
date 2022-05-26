@@ -685,6 +685,10 @@ EOF;
       $field['identity'] = TRUE;
     }
 
+    if (!empty($field['precision']) && $field['precision'] > 38) {
+      $field['precision'] = 38;
+    }
+
     return $field;
   }
 
