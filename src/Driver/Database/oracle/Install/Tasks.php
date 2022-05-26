@@ -43,6 +43,14 @@ class Tasks extends InstallTasks {
     if (empty($form['advanced_options']['port']['#default_value'])) {
       $form['advanced_options']['port']['#default_value'] = '1521';
     }
+    if (empty($form['advanced_options']['autoload'])) {
+      $form['advanced_options']['autoload'] = [
+        '#type' => 'textfield',
+        '#default_value' => '',
+        '#attributes' => ['class' => ['hidden']],
+      ];
+    }
+
     return $form;
   }
 
