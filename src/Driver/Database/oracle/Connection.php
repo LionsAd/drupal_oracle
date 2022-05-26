@@ -36,11 +36,6 @@ define('ORACLE_LONG_IDENTIFIER_PREFIX', 'L#');
 define('ORACLE_MAX_VARCHAR2_LENGTH', 4000);
 
 /**
- * Placeholder used to ensure the C## survives.
- */
-define('ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER', 'C__ORACLE_DRIVER_FULL_QUALIFIED_TABLE_NAME');
-
-/**
  * @addtogroup database
  * @{
  */
@@ -488,17 +483,17 @@ class Connection extends DatabaseConnection {
     // Local Naming Parameters configuration (by default is located in the
     // $ORACLE_HOME/network/admin/tnsnames.ora). This Driver DO NOT support
     // auto creation of database links for the connection.
-    return str_replace('C##', ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, $schema) . '.' . strtoupper($table) . '@' . $options['database'];
+    return $schema . '.' . $table . '@' . $options['database'];
   }
 
   /**
    * {@inheritdoc}
    */
   public function escapeTable($table) {
-    if (!isset($this->escapedNames[$table])) {
-      $this->escapedNames[$table] = preg_replace('/[^A-Za-z0-9_.@]+/', '', $table);
+    if (!isset($this->escapedTables[$table])) {
+      $this->escapedTables[$table] = preg_replace('/[^A-Za-z0-9_.@#]+/', '', $table);
     }
-    return $this->escapedNames[$table];
+    return $this->escapedTables[$table];
   }
 
   /**
@@ -648,7 +643,6 @@ class Connection extends DatabaseConnection {
    * {@inheritdoc}
    */
   public function prepareStatement(string $query, array $options, bool $allow_row_count = FALSE): StatementInterface {
-    $query = str_replace(ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, 'C##', $query);
     if (!($options['allow_square_brackets'] ?? FALSE)) {
       $query = $this->quoteIdentifiers($query);
     }
