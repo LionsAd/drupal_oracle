@@ -400,6 +400,8 @@ EOF;
 
     $this->connection->query('DROP TABLE ' . $this->oid($table, TRUE) . ' CASCADE CONSTRAINTS PURGE');
     $this->resetTableInformation($table);
+
+    return TRUE;
   }
 
   /**
