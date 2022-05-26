@@ -938,6 +938,13 @@ class Connection extends DatabaseConnection {
   }
 
   /**
+   * {@inheritDoc}
+   */
+  public function hasJson(): bool {
+    return TRUE;
+  }
+
+  /**
    * Cleaned query string.
    *
    * 1) Long identifiers placeholders.
