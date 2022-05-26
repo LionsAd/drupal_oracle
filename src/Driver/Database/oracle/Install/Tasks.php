@@ -12,6 +12,11 @@ use Drupal\oracle\Driver\Database\oracle\Connection;
 class Tasks extends InstallTasks {
 
   /**
+   * Minimum required Oracle version.
+   */
+  const ORACLE_MINIMUM_VERSION = '12.2';
+
+  /**
    * {@inheritdoc}
    */
   protected $pdoDriver = 'oci';
@@ -27,9 +32,7 @@ class Tasks extends InstallTasks {
    * {@inheritdoc}
    */
   public function minimumVersion() {
-
-    // @TODO: add version validation.
-    return NULL;
+    return static::ORACLE_MINIMUM_VERSION;
   }
 
   /**

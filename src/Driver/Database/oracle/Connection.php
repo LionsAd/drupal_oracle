@@ -625,13 +625,6 @@ class Connection extends DatabaseConnection {
   /**
    * {@inheritdoc}
    */
-  public function version() {
-    return NULL;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function prefixTables($sql) {
     $sql = parent::prefixTables($sql);
     return $this->escapeAnsi($sql);
