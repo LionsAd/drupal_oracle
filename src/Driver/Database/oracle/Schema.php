@@ -560,7 +560,7 @@ EOF;
       else {
         $this->connection->query('UPDATE {' . $table . '} SET ' . $this->oid($field) . ' = to_blob(utl_raw.cast_to_raw(' . $this->oid($field . '_old') . '))');
       }
-
+      
       if ($not_null) {
         // "ORA-01442: column to be modified to NOT NULL is already NOT NULL"
         $this->connection->querySafeDdl('ALTER TABLE {' . $table . '} MODIFY (' . $this->oid($field) . ' NOT NULL)', [], [
