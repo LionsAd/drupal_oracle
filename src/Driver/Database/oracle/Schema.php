@@ -1094,6 +1094,9 @@ EOF;
       if ($unprefixed_table_name == 'testtable') {
         $unprefixed_table_name = 'testTable';
       }
+      if ($unprefixed_table_name == 'a_upper_case_table_name') {
+        $unprefixed_table_name = 'A_UPPER_CASE_TABLE_NAME';
+      }
 
       // The pattern can match a table which is the same as the prefix. That
       // will become an empty string when we remove the prefix, which will
