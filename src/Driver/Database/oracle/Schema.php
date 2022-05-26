@@ -583,6 +583,13 @@ EOF;
 
       $this->cleanUpSchema($table);
 
+      // Ensure the sequence is re-initialized.
+      if (!empty($spec['identity'])) {
+        $table_information = $this->queryTableInformation($table);
+        $sequence_name = $table_information->sequences[0];
+        $this->connection->query('SELECT ' . $sequence_name. '.nextval from dual')->fetchField();
+      }
+
       // Return early as we added a new field.
       return;
     }
