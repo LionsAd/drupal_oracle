@@ -301,7 +301,7 @@ class Connection extends DatabaseConnection {
 
       // Ensure database. as prefix is supported.
       if (strpos($prefix[$key], '.') !== FALSE) {
-        $prefix[$key] = str_replace('.', '"."', str_replace('"', '', $prefix[$key]));
+        $prefix[$key] = str_replace('.', '.', str_replace('"', '', $prefix[$key]));
       }
     }
 
