@@ -312,9 +312,6 @@ class Connection extends DatabaseConnection {
    * {@inheritdoc}
    */
   public function query($query, array $args = [], $options = []) {
-    $this->expandArguments($query, $args);
-    $args = $this->cleanupArgs($args);
-
     // Use default values if not already set.
     $options += $this->defaultOptions();
 

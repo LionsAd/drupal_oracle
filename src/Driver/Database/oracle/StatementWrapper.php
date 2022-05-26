@@ -16,6 +16,11 @@ class StatementWrapper extends DatabaseStatementWrapper {
     if (!is_array($args) || !count($args)) {
       $args = NULL;
     }
+    else {
+      // Cleanup parameter and values.
+      $args = $this->connection->cleanupArgs($args);
+    }
+
     return parent::execute($args, $options);
   }
 
