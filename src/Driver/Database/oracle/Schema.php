@@ -964,6 +964,7 @@ EOF;
     if (!$this->indexExists($table, $name)) {
       return FALSE;
     }
+    [$schema, $table] = $this->tableSchema($table);
 
     $this->connection->query('DROP INDEX ' . $this->oidWithSchema('IDX_' . $table . '_' . $name));
     return TRUE;
