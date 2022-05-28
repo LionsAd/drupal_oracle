@@ -12,6 +12,11 @@ use Drupal\oracle\Driver\Database\oracle\Connection;
 class Tasks extends InstallTasks {
 
   /**
+   * Minimum required Oracle version.
+   */
+  const ORACLE_MINIMUM_VERSION = '12.2';
+
+  /**
    * {@inheritdoc}
    */
   protected $pdoDriver = 'oci';
@@ -27,9 +32,7 @@ class Tasks extends InstallTasks {
    * {@inheritdoc}
    */
   public function minimumVersion() {
-
-    // @TODO: add version validation.
-    return NULL;
+    return static::ORACLE_MINIMUM_VERSION;
   }
 
   /**
@@ -40,6 +43,14 @@ class Tasks extends InstallTasks {
     if (empty($form['advanced_options']['port']['#default_value'])) {
       $form['advanced_options']['port']['#default_value'] = '1521';
     }
+    if (empty($form['advanced_options']['autoload'])) {
+      $form['advanced_options']['autoload'] = [
+        '#type' => 'textfield',
+        '#default_value' => '',
+        '#attributes' => ['class' => ['hidden']],
+      ];
+    }
+
     return $form;
   }
 

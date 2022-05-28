@@ -26,28 +26,26 @@ class Insert extends QueryInsert {
       return NULL;
     }
 
-    $table_information = $this->connection->schema()->queryTableInformation($this->table);
-    // Oracle requires the table name to be specified explicitly
-    // when requesting the last insert ID, so we pass that in via
-    // the options array.
-    if (!empty($table_information->sequences)) {
-      $this->queryOptions['sequence_name'] = $table_information->sequences[0];
-      $this->queryOptions['return'] = Database::RETURN_INSERT_ID;
-    }
-    // If there are no sequences then we can't get a last insert id.
-    elseif ($this->queryOptions['return'] == Database::RETURN_INSERT_ID) {
-      $this->queryOptions['return'] = Database::RETURN_NULL;
+    // Cleanup arg values
+    foreach ($this->insertValues as &$insert_values) {
+      foreach ($this->insertFields as $idx => $field) {
+        $insert_values[$idx] = $this->connection->cleanupArgValue($insert_values[$idx]);
+      }
     }
 
-    $stmt = $this->connection->prepareQuery((string) $this);
+    $table_information = $this->connection->schema()->queryTableInformation($this->table);
+    $sequence_name = NULL;
+    if (!empty($table_information->sequences)) {
+      $sequence_name  = $table_information->sequences[0];
+    }
+
+    $stmt = $this->connection->prepareStatement((string) $this, $this->queryOptions);
 
     if (!empty($this->fromQuery)) {
       foreach ($this->fromQuery->getArguments() as $key => $value) {
         $value = $this->connection->cleanupArgValue($value);
-        $stmt->bindParam($key, $value);
+        $stmt->getClientStatement()->bindParam($key, $value);
       }
-      // The SelectQuery may contain arguments, load and pass them through.
-      return $this->connection->query($stmt, array(), $this->queryOptions);
     }
 
     $last_insert_id = 0;
@@ -55,7 +53,11 @@ class Insert extends QueryInsert {
 
     try {
       if (empty($this->insertValues)) {
-        $last_insert_id = $this->connection->query($stmt, array(), $this->queryOptions);
+        if (!empty($this->defaultFields) || !empty($this->fromQuery)) {
+          $stmt->execute(NULL, $this->queryOptions);
+        }
+
+        $last_insert_id = $sequence_name ? $this->connection->lastInsertId($sequence_name) : 0;
       }
       else {
         foreach ($this->insertValues as &$insert_values) {
@@ -63,23 +65,30 @@ class Insert extends QueryInsert {
           $blobs = [];
           $blob_count = 0;
           foreach ($this->insertFields as $idx => $field) {
+            $has_value = TRUE;
+            if (count($this->insertValues) == 1) {
+              $has_value = $insert_values[$idx] !== NULL;
+            }
+
             $insert_values[$idx] = $this->connection->cleanupArgValue($insert_values[$idx]);
 
-            if (isset($table_information->blob_fields[strtoupper($field)])) {
+            if (isset($table_information->blob_fields[strtoupper($field)]) && $has_value) {
               $blobs[$blob_count] = fopen('php://memory', 'a');
               fwrite($blobs[$blob_count], $insert_values[$idx]);
               rewind($blobs[$blob_count]);
-              $stmt->bindParam(':db_insert_placeholder_' . $max_placeholder++, $blobs[$blob_count], \PDO::PARAM_LOB);
+              $stmt->getClientStatement()->bindParam(':db_insert_placeholder_' . $max_placeholder++, $blobs[$blob_count], \PDO::PARAM_LOB);
 
               // Pre-increment is faster in PHP than increment.
               ++$blob_count;
             }
             else {
-              $stmt->bindParam(':db_insert_placeholder_' . $max_placeholder++, $insert_values[$idx]);
+              $stmt->getClientStatement()->bindParam(':db_insert_placeholder_' . $max_placeholder++, $insert_values[$idx]);
             }
           }
-          $last_insert_id = $this->connection->query($stmt, [], $this->queryOptions);
+          $stmt->execute(NULL, $this->queryOptions);
         }
+
+        $last_insert_id = $sequence_name ? $this->connection->lastInsertId($sequence_name) : 0;
       }
     }
     catch (\Exception $e) {
@@ -88,7 +97,7 @@ class Insert extends QueryInsert {
       $transaction->rollback();
 
       // Rethrow the exception for the calling code.
-      throw $e;
+      $this->connection->exceptionHandler()->handleExecutionException($e, $stmt, [], $this->queryOptions);
     }
 
     // Re-initialize the values array so that we can re-use this query.
@@ -106,6 +115,13 @@ class Insert extends QueryInsert {
     // Default fields are always placed first for consistency.
     $insert_fields = array_merge($this->defaultFields, $this->insertFields);
 
+    $insert_fields = array_map(function ($f) {
+      return $this->connection->escapeField($f);
+    }, $insert_fields);
+
+
+    // If we're selecting from a SelectQuery, finish building the query and
+    // pass it back, as any remaining options are irrelevant.
     if (!empty($this->fromQuery)) {
       $cols = implode(', ', $insert_fields);
       if (!empty($cols)) {
@@ -127,8 +143,13 @@ class Insert extends QueryInsert {
       $placeholders = array_pad($placeholders, count($this->defaultFields), 'default');
       $i = 0;
       foreach ($this->insertFields as $idx => $field) {
-        if (isset($table_information->blob_fields[strtoupper($field)])) {
-          $blobs[$field] = ':db_insert_placeholder_' . $i++;
+        $has_value = TRUE;
+        if (count($this->insertValues) == 1) {
+          $has_value = $this->insertValues[0][$idx] !== NULL;
+        }
+
+        if (isset($table_information->blob_fields[strtoupper($field)]) && $has_value) {
+          $blobs[$this->connection->escapeField($field)] = ':db_insert_placeholder_' . $i++;
           $placeholders[] = 'EMPTY_BLOB()';
         }
         else {

@@ -25,12 +25,15 @@ class Upsert extends QueryUpsert {
       return NULL;
     }
 
+    $result = 0;
     foreach ($this->insertValues as $insert_values) {
-      $this->executeOne($insert_values);
+      $result += (int) $this->executeOne($insert_values);
     }
 
-    // @todo Should be last insert id.
-    return NULL;
+    // Re-initialize the values array so that we can re-use this query.
+    $this->insertValues = [];
+
+    return $result;
   }
 
   /**

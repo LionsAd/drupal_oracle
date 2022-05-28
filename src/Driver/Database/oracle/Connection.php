@@ -7,6 +7,8 @@ use Drupal\Core\Database\IntegrityConstraintViolationException;
 use Drupal\Core\Database\Database;
 use Drupal\Core\Database\Connection as DatabaseConnection;
 use Drupal\Core\Database\Log;
+use Drupal\Core\Database\StatementInterface;
+use Drupal\oracle\Driver\Database\oracle\StatementWrapper;
 
 /**
  * Used to replace '' character in queries.
@@ -32,11 +34,6 @@ define('ORACLE_LONG_IDENTIFIER_PREFIX', 'L#');
  * Affects schema.inc table creation.
  */
 define('ORACLE_MAX_VARCHAR2_LENGTH', 4000);
-
-/**
- * Placeholder used to ensure the C## survives.
- */
-define('ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER', 'C__ORACLE_DRIVER_FULL_QUALIFIED_TABLE_NAME');
 
 /**
  * @addtogroup database
@@ -177,11 +174,16 @@ class Connection extends DatabaseConnection {
   /**
    * {@inheritdoc}
    */
-  protected $statementClass = 'Drupal\oracle\Driver\Database\oracle\Statement';
+  protected $statementClass = NULL;
 
   /**
    * {@inheritdoc}
    */
+  protected $statementWrapperClass = StatementWrapper::class;
+
+   /**
+    * {@inheritdoc}
+    */
   public function __construct(\PDO $connection, array $connection_options = array()) {
     parent::__construct($connection, $connection_options);
 
@@ -194,7 +196,7 @@ class Connection extends DatabaseConnection {
 
     // Setup session attributes.
     try {
-      $stmt = $this->prepareQuery("SELECT setup_session() FROM dual");
+      $stmt = $this->prepareStatement("SELECT setup_session() FROM dual", []);
       $stmt->execute();
     }
     catch (\Exception $ex) {
@@ -219,13 +221,15 @@ class Connection extends DatabaseConnection {
         // Allow ORA-00904 ("invalid identifier error") and ORA-06575 ("package
         // or function is in an invalid state") and during the installation
         // process (before the 'identifier' package were created).
-        $this
-          ->query('SELECT identifier.check_db_prefix(?) FROM dual', [$prefix], [
-            'oracle_exceptions_allowed' => ['06575', '00904'],
-            ]);
+        $this->querySafeDdl('SELECT identifier.check_db_prefix(?) FROM dual', [$prefix], ['06575', '00904']);
       }
     }
   }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected $identifierQuotes = ['"', '"'];
 
   /**
    * {@inheritdoc}
@@ -297,7 +301,7 @@ class Connection extends DatabaseConnection {
 
       // Ensure database. as prefix is supported.
       if (strpos($prefix[$key], '.') !== FALSE) {
-        $prefix[$key] = str_replace('.', '"."', str_replace('"', '', $prefix[$key]));
+        $prefix[$key] = str_replace('.', '.', str_replace('"', '', $prefix[$key]));
       }
     }
 
@@ -311,94 +315,20 @@ class Connection extends DatabaseConnection {
     // Use default values if not already set.
     $options += $this->defaultOptions();
 
-    if (isset($options['target'])) {
-      @trigger_error('Passing a \'target\' key to \\Drupal\\Core\\Database\\Connection::query $options argument is deprecated in drupal:8.0.x and will be removed before drupal:9.0.0. Instead, use \\Drupal\\Core\\Database\\Database::getConnection($target)->query(). See https://www.drupal.org/node/2993033', E_USER_DEPRECATED);
+    $return_last_id = FALSE;
+    if (($options['return'] ?? Database::RETURN_STATEMENT) == Database::RETURN_INSERT_ID) {
+      $return_last_id = TRUE;
+      unset($options['return']);
     }
 
-    try {
-      if ($query instanceof \PDOStatement) {
-        $stmt = $query;
-      }
-      else {
-        $this->expandArguments($query, $args);
+    $result = parent::query($query, $args, $options);
 
-        // To protect against SQL injection, Drupal only supports executing one
-        // statement at a time.  Thus, the presence of a SQL delimiter (the
-        // semicolon) is not allowed unless the option is set.  Allowing
-        // semicolons should only be needed for special cases like defining a
-        // function or stored procedure in SQL.
-        // @see https://www.drupal.org/project/drupal/issues/2489672
-        if (empty($options['allow_delimiter_in_query'])) {
-          $query = rtrim($query, ";  \t\n\r\0\x0B");
-          if (strpos($query, ';') !== FALSE) {
-            throw new \InvalidArgumentException('; is not supported in SQL strings. Use only one statement at a time.');
-          }
-        }
-
-        $stmt = $this->prepareQuery($query);
-        $args = $this->cleanupArgs($args);
-      }
-
-      $stmt->execute(empty($args) ? NULL : (array) $args, $options);
-
-      switch ($options['return']) {
-        case Database::RETURN_STATEMENT:
-          return $stmt;
-
-        case Database::RETURN_AFFECTED:
-          $stmt->allowRowCount = TRUE;
-          return $stmt->rowCount();
-
-        case Database::RETURN_INSERT_ID:
-          return (isset($options['sequence_name']) ? $this->lastInsertId($options['sequence_name']) : FALSE);
-
-        case Database::RETURN_NULL:
-          return NULL;
-
-        default:
-          throw new \PDOException('Invalid return directive: ' . $options['return']);
-      }
+    // Override the default RETURN_INSERT_ID.
+    if ($return_last_id) {
+      return (isset($options['sequence_name']) ? $this->lastInsertId($options['sequence_name']) : FALSE);
     }
-    catch (\InvalidArgumentException $exception) {
-      throw $exception;
-    }
-    catch (\Exception $e) {
-      if ($options['throw_exception']) {
-        $message = implode([
-          ($query instanceof \PDOStatement) ? $stmt->queryString : $query,
-          (isset($stmt) && $stmt instanceof Statement ? ' (prepared: ' . $stmt->getQueryString() . ' )' : ''),
-          ' e: ' . $e->getMessage(),
-          ' args: ' . print_r($args, TRUE)
-        ]);
-        syslog(LOG_ERR, "error query: " . $message);
 
-        // Prepare the exception to throw.
-        $code = (int) $e->errorInfo[1];
-        if (strpos($e->getMessage(), 'ORA-00001')) {
-          $exception = new IntegrityConstraintViolationException($message, $code, $e);
-        }
-        else {
-          $exception = new DatabaseExceptionWrapper($message, $code, $e);
-        }
-
-        // @todo: check whe do we need this?
-        $exception->errorInfo = $e->errorInfo;
-        if ($code === 1) {
-          $exception->errorInfo[0] = '23000';
-        }
-
-        // Ignore allowed errors.
-        if (isset($options['oracle_exceptions_allowed']) &&
-          in_array($code, $options['oracle_exceptions_allowed'], FALSE)) {
-          return NULL;
-        }
-
-        // Throw an exception otherwise.
-        throw $exception;
-      }
-
-      return NULL;
-    }
+    return $result;
   }
 
   /**
@@ -421,6 +351,8 @@ class Connection extends DatabaseConnection {
    * {@inheritdoc}
    */
   public function queryTemporary($query, array $args = array(), array $options = array()) {
+    @trigger_error('Connection::queryTemporary() is deprecated in drupal:9.3.0 and is removed from drupal:10.0.0. There is no replacement. See https://www.drupal.org/node/3211781', E_USER_DEPRECATED);
+
     $tablename = $this->generateTemporaryTableName();
     try {
       $this->query('DROP TABLE {' . $tablename . '}');
@@ -451,8 +383,6 @@ class Connection extends DatabaseConnection {
    *   FALSE if the error occurs, TRUE if not.
    *
    * @throws \Drupal\Core\Database\DatabaseExceptionWrapper
-   *
-   * @deprecated use query() with oracle_exceptions_allowed option instead.
    */
   public function querySafeDdl($query, $args = [], $allowed = []) {
     try {
@@ -497,7 +427,7 @@ class Connection extends DatabaseConnection {
 
     try {
       $logger = $this->pauseLog();
-      $stmt = $this->prepare($query);
+      $stmt = new $this->statementWrapperClass($this, $this->connection, $query, []);
       $stmt->execute($args);
       $this->continueLog($logger);
       return $stmt;
@@ -550,17 +480,17 @@ class Connection extends DatabaseConnection {
     // Local Naming Parameters configuration (by default is located in the
     // $ORACLE_HOME/network/admin/tnsnames.ora). This Driver DO NOT support
     // auto creation of database links for the connection.
-    return str_replace('C##', ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, $schema) . '.' . strtoupper($table) . '@' . $options['database'];
+    return $schema . '.' . $table . '@' . $options['database'];
   }
 
   /**
    * {@inheritdoc}
    */
   public function escapeTable($table) {
-    if (!isset($this->escapedNames[$table])) {
-      $this->escapedNames[$table] = preg_replace('/[^A-Za-z0-9_.@]+/', '', $table);
+    if (!isset($this->escapedTables[$table])) {
+      $this->escapedTables[$table] = preg_replace('/[^A-Za-z0-9_.@#]+/', '', $table);
     }
-    return $this->escapedNames[$table];
+    return $this->escapedTables[$table];
   }
 
   /**
@@ -583,6 +513,7 @@ class Connection extends DatabaseConnection {
     $this->query("ALTER TABLE {sequences} MODIFY (value GENERATED BY DEFAULT ON NULL AS IDENTITY START WITH $new_id)");
 
     // Retrive the next id. We know this will be as high as we want it.
+    $id = $this->query("SELECT " . $sequence_name . ".currval FROM DUAL")->fetchField();
     $id = $this->query("SELECT " . $sequence_name . ".nextval FROM DUAL")->fetchField();
 
     return $id;
@@ -617,6 +548,7 @@ class Connection extends DatabaseConnection {
       $this->logger = NULL;
       return $logger;
     }
+
     return NULL;
   }
 
@@ -693,23 +625,19 @@ class Connection extends DatabaseConnection {
   /**
    * {@inheritdoc}
    */
-  public function version() {
-    return NULL;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function prefixTables($sql) {
     $sql = parent::prefixTables($sql);
     return $this->escapeAnsi($sql);
   }
 
   /**
-   * Oracle connection helper.
+   * {@inheritdoc}
    */
-  public function prepareQuery($query) {
-    $query = str_replace(ORACLE_FULL_QUALIFIED_TABLE_PREFIX_PLACEHOLDER, 'C##', $query);
+  public function prepareStatement(string $query, array $options, bool $allow_row_count = FALSE): StatementInterface {
+    if (!($options['allow_square_brackets'] ?? FALSE)) {
+      $query = $this->quoteIdentifiers($query);
+    }
+
     $query = $this->escapeEmptyLiterals($query);
     $query = $this->escapeAnsi($query);
     if (!$this->external) {
@@ -719,66 +647,9 @@ class Connection extends DatabaseConnection {
     $query = $this->escapeCompatibility($query);
     $query = $this->prefixTables($query);
     $query = $this->escapeIfFunction($query);
-    return $this->prepare($query);
-  }
 
-  /**
-   * {@inheritdoc}
-   */
-  public function escapeField($field) {
-    $escaped = parent::escapeField($field);
-
-    // Remove any invalid start character.
-    $escaped = preg_replace('/^[^A-Za-z0-9_]/', '', $escaped);
-
-    // The pgsql database driver does not support field names that contain
-    // periods (supported by PostgreSQL server) because this method may be
-    // called by a field with a table alias as part of SQL conditions or
-    // order by statements. This will consider a period as a table alias
-    // identifier, and split the string at the first period.
-    if (preg_match('/^([A-Za-z0-9_]+)"?[.]"?([A-Za-z0-9_.]+)/', $escaped, $parts)) {
-      $table = $parts[1];
-      $column = $parts[2];
-
-      // Use escape alias because escapeField may contain multiple periods that
-      // need to be escaped.
-      $escaped = $this->escapeTable($table) . '.' . $this->escapeAlias($column);
-    }
-    else {
-      $escaped = $this->doEscape($escaped);
-    }
-
-    return $escaped;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function escapeAlias($field) {
-    $escaped = preg_replace('/[^A-Za-z0-9_]+/', '', $field);
-    $escaped = $this->doEscape($escaped);
-    return $escaped;
-  }
-
-  /**
-   * Escape a string if needed.
-   *
-   * @param $string
-   *   The string to escape.
-   * @return string
-   *   The escaped string.
-   */
-  protected function doEscape($string) {
-    // Quote identifier to make it case-sensitive.
-    // @todo Rework?
-    if (preg_match('/[A-Z]/', $string)) {
-      $string = '"' . $string . '"';
-    }
-    elseif (in_array(strtoupper($string), $this->oracleReservedWords)) {
-      // Quote the string for Oracle reserved key words.
-      $string = '"' . strtoupper($string) . '"';
-    }
-    return $string;
+    $options['allow_square_brackets'] = TRUE;
+    return parent::prepareStatement($query, $options, $allow_row_count);
   }
 
   /**
@@ -800,7 +671,7 @@ class Connection extends DatabaseConnection {
     $replace = [
       "BITAND(\\1,\\2) = \\3",
       "BITAND(\\1,\\2) <> \\3",
-      'begin null; end;',
+      'SELECT \'RELEASE SAVEPOINT \\1\' FROM DUAL',
       "NOT REGEXP_LIKE(\\1, \\2)",
       "REGEXP_LIKE(\\1, \\2)",
     ];
@@ -835,6 +706,10 @@ class Connection extends DatabaseConnection {
    * Oracle connection helper.
    */
   private function escapeEmptyLiterals($query) {
+    if (strpos($query, 'DEFAULT ') !== FALSE) {
+      return $query;
+    }
+
     if (is_object($query)) {
       $query = $query->getQueryString();
     }
@@ -860,13 +735,28 @@ class Connection extends DatabaseConnection {
     }
     $ddl = !((boolean) preg_match('/^(select|insert|update|delete)/i', $query));
 
-    // Escapes all table names.
+    // Uppercases all table names.
     $query = preg_replace_callback(
       '/({)(\w+)(})/',
       function ($matches) {
-        return '"{' . strtoupper($matches[2]) . '}"';
+        return '{' . strtoupper($matches[2]) . '}';
       },
       $query);
+
+    // Uppercases all identifiers.
+    $t = explode("'", $query);
+    for ($i = 0; $i < count($t); $i++) {
+      if ($i % 2 == 1) {
+        continue;
+      }
+      $t[$i] = preg_replace_callback(
+        '/(")(\w+)(")/',
+        function ($matches) {
+          return '"' . strtoupper($matches[2]) . '"';
+        },
+        $t[$i]);
+    }
+    $query = implode("'", $t);
 
     // Escapes long id.
     $query = preg_replace_callback(
@@ -1049,6 +939,13 @@ class Connection extends DatabaseConnection {
     if (isset($this->transactionLayers[$savepoint_name])) {
       $this->rollBack($savepoint_name);
     }
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  public function hasJson(): bool {
+    return TRUE;
   }
 
   /**
